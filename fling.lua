@@ -13,8 +13,8 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false,
 })
 
-local MainTab = Window:CreateTab("Main", 6035057668)
-local SettingsTab = Window:CreateTab("Settings", 7733765391)
+local MainTab = Window:CreateTab("Main")
+local SettingsTab = Window:CreateTab("Settings")
 local Status = MainTab:CreateLabel("Status: Ready")
 
 local TouchFlingActive = false
@@ -83,7 +83,7 @@ local function flyFling()
         local camera = workspace.CurrentCamera
         local moveDirection = Vector3.new(0, 0, 0)
         
-        -- Movement controls
+        -- Movement controls with better handling for high speeds
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
             moveDirection = moveDirection + camera.CFrame.LookVector
         end
@@ -103,9 +103,15 @@ local function flyFling()
             moveDirection = moveDirection - Vector3.new(0, 1, 0)
         end
         
-        -- Apply movement
+        -- Apply movement with better speed control
         if moveDirection.Magnitude > 0 then
-            bodyVelocity.Velocity = moveDirection.Unit * FlySpeed
+            -- Use a smoother acceleration curve for high speeds
+            local currentSpeed = FlySpeed
+            if FlySpeed > 100 then
+                -- Reduce sensitivity at very high speeds
+                currentSpeed = 100 + (FlySpeed - 100) * 0.5
+            end
+            bodyVelocity.Velocity = moveDirection.Unit * currentSpeed
         else
             bodyVelocity.Velocity = Vector3.new(0, 0, 0)
         end
@@ -208,10 +214,20 @@ SettingsTab:CreateSlider({
     CurrentValue = FlySpeed,
     Callback = function(value)
         FlySpeed = value
-        if FlyFlingActive then
-            Status:Set("Fly Fling: Active | Speed: " .. value)
+        if FlySpeed > 100 then
+            -- Show adjusted speed in status for high values
+            local adjustedSpeed = 100 + (FlySpeed - 100) * 0.5
+            if FlyFlingActive then
+                Status:Set("Fly Fling: Active | Speed: " .. value .. " (Adjusted: " .. math.floor(adjustedSpeed) .. ")")
+            else
+                Status:Set("Fly Speed set to: " .. value .. " (Adjusted: " .. math.floor(adjustedSpeed) .. ")")
+            end
         else
-            Status:Set("Fly Speed set to: " .. value)
+            if FlyFlingActive then
+                Status:Set("Fly Fling: Active | Speed: " .. value)
+            else
+                Status:Set("Fly Speed set to: " .. value)
+            end
         end
     end
 })
