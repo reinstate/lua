@@ -9,12 +9,12 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Window = Rayfield:CreateWindow({
     Name = "Fling Hub",
     LoadingTitle = "Fling Hub",
-    LoadingSubtitle = "Player Fling Gui",
+    LoadingSubtitle = "Loading systems...",
     ConfigurationSaving = {Enabled = true, FolderName = "FlingHub"},
     KeySystem = false,
 })
 
-local Tab = Window:CreateTab("Fling", 6035057668)
+local Tab = Window:CreateTab("Main", 6035057668)
 local Status = Tab:CreateLabel("Status: Ready")
 
 local TouchFlingActive = false
@@ -64,7 +64,7 @@ local function lockFollow()
             myHRP.CFrame = targetHRP.CFrame
         end
         
-        task.wait(0.1) -- Continuous spam every 0.1 seconds
+        task.wait(0.1)
     end
 end
 
@@ -101,18 +101,18 @@ mouse.Button1Down:Connect(function()
         local player = Players:GetPlayerFromCharacter(model)
         if player and player ~= lp then
             LockTarget = player
-            Status:Set("🔒 LOCKED: " .. player.DisplayName .. " - Following every 0.1s")
+            Status:Set("Locked: " .. player.DisplayName .. " - Teleporting every 0.1s")
         end
     end
 end)
 
 Tab:CreateToggle({
-    Name = "Touch Fling (Fling others on contact)",
+    Name = "Touch Fling",
     CurrentValue = false,
     Callback = function(state)
         if state then
             StartTouchFling()
-            Status:Set("Touch Fling: ON – Velocity: " .. VelocityMultiplier)
+            Status:Set("Touch Fling: ON - Velocity: " .. VelocityMultiplier)
         else
             StopTouchFling()
             Status:Set("Touch Fling: OFF")
@@ -121,20 +121,19 @@ Tab:CreateToggle({
 })
 
 Tab:CreateToggle({
-    Name = "Lock Target (Click player to lock)",
+    Name = "Lock Target",
     CurrentValue = false,
     Callback = function(state)
         if state then
             StartLockTarget()
-            Status:Set("Player Lock: ACTIVE - Click any player to lock onto them")
+            Status:Set("Lock Target: ACTIVE - Click player to lock")
         else
             StopLockTarget()
-            Status:Set("Player Lock: OFF")
+            Status:Set("Lock Target: OFF")
         end
     end
 })
 
--- Velocity Multiplier Slider
 Tab:CreateSlider({
     Name = "Velocity Multiplier",
     Range = {1000, 100000},
@@ -143,16 +142,16 @@ Tab:CreateSlider({
     Callback = function(value)
         VelocityMultiplier = value
         if TouchFlingActive then
-            Status:Set("Touch Fling: ON – Velocity: " .. value)
+            Status:Set("Touch Fling: ON - Velocity: " .. value)
         end
     end
 })
 
 Rayfield:Notify({
     Title = "Fling Hub Loaded",
-    Content = "Touch Fling + Lock Target enabled!\nClick players while Lock is active to follow them every 0.1s",
-    Duration = 5,
+    Content = "Touch Fling and Lock Target systems ready",
+    Duration = 3,
 })
 
-Status:Set("Fling Hub ready – Toggle below to start")
-print("Fling Hub - With Lock Target Feature")
+Status:Set("Ready - Toggle features below")
+print("Fling Hub Loaded")
