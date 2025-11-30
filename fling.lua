@@ -9,7 +9,7 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Window = Rayfield:CreateWindow({
     Name = "Fling Hub",
     LoadingTitle = "Fling Hub",
-    LoadingSubtitle = "Fling GUI",
+    LoadingSubtitle = "Player Fling Gui",
     ConfigurationSaving = {Enabled = true, FolderName = "FlingHub"},
     KeySystem = false,
 })
@@ -24,11 +24,7 @@ local flingThread
 local lockThread 
 
 -- Fling Settings
-local FlingSettings = {
-    VelocityMultiplier = 10000,
-    UpwardForce = 10000,
-    MovementOscillation = 0.1
-}
+local VelocityMultiplier = 10000
 
 -- Add detection part (from the GUI script)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,7 +36,7 @@ end
 
 local function fling()
     local lp = Players.LocalPlayer
-    local c, hrp, vel, movel = nil, nil, nil, FlingSettings.MovementOscillation
+    local c, hrp, vel, movel = nil, nil, nil, 0.1
 
     while TouchFlingActive do
         RunService.Heartbeat:Wait()
@@ -49,7 +45,7 @@ local function fling()
 
         if hrp then
             vel = hrp.Velocity
-            hrp.Velocity = vel * FlingSettings.VelocityMultiplier + Vector3.new(0, FlingSettings.UpwardForce, 0)
+            hrp.Velocity = vel * VelocityMultiplier + Vector3.new(0, 10000, 0)
             RunService.RenderStepped:Wait()
             hrp.Velocity = vel
             RunService.Stepped:Wait()
@@ -116,7 +112,7 @@ Tab:CreateToggle({
     Callback = function(state)
         if state then
             StartTouchFling()
-            Status:Set("Touch Fling: ON – Velocity: " .. FlingSettings.VelocityMultiplier)
+            Status:Set("Touch Fling: ON – Velocity: " .. VelocityMultiplier)
         else
             StopTouchFling()
             Status:Set("Touch Fling: OFF")
@@ -130,10 +126,10 @@ Tab:CreateToggle({
     Callback = function(state)
         if state then
             StartLockTarget()
-            Status:Set("🔓 Lock: ACTIVE - Click any player to lock onto them")
+            Status:Set("Player Lock: ACTIVE - Click any player to lock onto them")
         else
             StopLockTarget()
-            Status:Set("🔓 Lock: OFF")
+            Status:Set("Player Lock: OFF")
         end
     end
 })
@@ -143,51 +139,11 @@ Tab:CreateSlider({
     Name = "Velocity Multiplier",
     Range = {1000, 100000},
     Increment = 1000,
-    CurrentValue = FlingSettings.VelocityMultiplier,
+    CurrentValue = VelocityMultiplier,
     Callback = function(value)
-        FlingSettings.VelocityMultiplier = value
+        VelocityMultiplier = value
         if TouchFlingActive then
             Status:Set("Touch Fling: ON – Velocity: " .. value)
-        end
-    end
-})
-
--- Upward Force Slider
-Tab:CreateSlider({
-    Name = "Upward Force",
-    Range = {1000, 100000},
-    Increment = 1000,
-    CurrentValue = FlingSettings.UpwardForce,
-    Callback = function(value)
-        FlingSettings.UpwardForce = value
-        if TouchFlingActive then
-            Status:Set("Touch Fling: ON – Upward: " .. value)
-        end
-    end
-})
-
--- Movement Oscillation Slider
-Tab:CreateSlider({
-    Name = "Movement Oscillation",
-    Range = {0.01, 1},
-    Increment = 0.01,
-    CurrentValue = FlingSettings.MovementOscillation,
-    Callback = function(value)
-        FlingSettings.MovementOscillation = value
-    end
-})
-
--- Reset to Defaults Button
-Tab:CreateButton({
-    Name = "Reset to Default Values",
-    Callback = function()
-        FlingSettings.VelocityMultiplier = 10000
-        FlingSettings.UpwardForce = 10000
-        FlingSettings.MovementOscillation = 0.1
-        if TouchFlingActive then
-            Status:Set("Touch Fling: ON – Reset to Default")
-        else
-            Status:Set("Settings reset to default")
         end
     end
 })
