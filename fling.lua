@@ -18,7 +18,6 @@ local Status = Tab:CreateLabel("Status: Ready")
 local TouchFlingActive = false
 local flingThread 
 
--- Add detection part (from the GUI script)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 if not ReplicatedStorage:FindFirstChild("juisdfj0i32i0eidsuf0iok") then
     local detection = Instance.new("Decal")
