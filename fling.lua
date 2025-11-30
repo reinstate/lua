@@ -13,8 +13,9 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false,
 })
 
-local Tab = Window:CreateTab("Main", 6035057668)
-local Status = Tab:CreateLabel("Status: Ready")
+local MainTab = Window:CreateTab("Main", 6035057668)
+local SettingsTab = Window:CreateTab("Settings", 7733765391)
+local Status = MainTab:CreateLabel("Status: Ready")
 
 local TouchFlingActive = false
 local FlyFlingActive = false
@@ -153,7 +154,8 @@ local function StopFlyFling()
     FlyFlingActive = false
 end
 
-Tab:CreateToggle({
+-- Main Tab (Toggles)
+MainTab:CreateToggle({
     Name = "Touch Fling",
     CurrentValue = false,
     Callback = function(state)
@@ -167,7 +169,7 @@ Tab:CreateToggle({
     end
 })
 
-Tab:CreateToggle({
+MainTab:CreateToggle({
     Name = "Fly Fling",
     CurrentValue = false,
     Callback = function(state)
@@ -181,7 +183,8 @@ Tab:CreateToggle({
     end
 })
 
-Tab:CreateSlider({
+-- Settings Tab (Sliders)
+SettingsTab:CreateSlider({
     Name = "Velocity Multiplier",
     Range = {1000, 100000},
     Increment = 1000,
@@ -198,7 +201,7 @@ Tab:CreateSlider({
     end
 })
 
-Tab:CreateSlider({
+SettingsTab:CreateSlider({
     Name = "Fly Speed",
     Range = {10, 200},
     Increment = 5,
