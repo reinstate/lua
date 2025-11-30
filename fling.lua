@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local lp = Players.LocalPlayer
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -16,10 +17,13 @@ local Tab = Window:CreateTab("Main", 6035057668)
 local Status = Tab:CreateLabel("Status: Ready")
 
 local TouchFlingActive = false
+local FlyFlingActive = false
 local flingThread 
+local flyThread
 
 -- Fling Settings
 local VelocityMultiplier = 10000
+local FlySpeed = 50
 
 -- Add detection part
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -50,6 +54,81 @@ local function fling()
     end
 end
 
+local function flyFling()
+    local character = lp.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    
+    if not humanoid or not rootPart then return end
+    
+    -- HD Admin style fly - uses humanoid state changes
+    humanoid.PlatformStand = true
+    
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+    bodyVelocity.Parent = rootPart
+    
+    local bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.D = 50
+    bodyGyro.P = 1000
+    bodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+    bodyGyro.CFrame = rootPart.CFrame
+    bodyGyro.Parent = rootPart
+    
+    while FlyFlingActive and character and rootPart do
+        local camera = workspace.CurrentCamera
+        local moveDirection = Vector3.new(0, 0, 0)
+        
+        -- Movement controls
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDirection = moveDirection + camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDirection = moveDirection - camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDirection = moveDirection - camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDirection = moveDirection + camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            moveDirection = moveDirection + Vector3.new(0, 1, 0)
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            moveDirection = moveDirection - Vector3.new(0, 1, 0)
+        end
+        
+        -- Apply movement
+        if moveDirection.Magnitude > 0 then
+            bodyVelocity.Velocity = moveDirection.Unit * FlySpeed
+        else
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+        
+        -- Maintain orientation
+        bodyGyro.CFrame = camera.CFrame
+        
+        -- Apply fling while flying
+        if rootPart then
+            local vel = rootPart.Velocity
+            rootPart.Velocity = vel * VelocityMultiplier + Vector3.new(0, 10000, 0)
+            RunService.RenderStepped:Wait()
+            rootPart.Velocity = vel
+        end
+        
+        RunService.Heartbeat:Wait()
+    end
+    
+    -- Cleanup
+    if bodyVelocity then bodyVelocity:Destroy() end
+    if bodyGyro then bodyGyro:Destroy() end
+    if humanoid then humanoid.PlatformStand = false end
+end
+
 local function StartTouchFling()
     if TouchFlingActive then return end
     TouchFlingActive = true
@@ -60,6 +139,18 @@ end
 
 local function StopTouchFling()
     TouchFlingActive = false
+end
+
+local function StartFlyFling()
+    if FlyFlingActive then return end
+    FlyFlingActive = true
+    
+    flyThread = coroutine.create(flyFling)
+    coroutine.resume(flyThread)
+end
+
+local function StopFlyFling()
+    FlyFlingActive = false
 end
 
 Tab:CreateToggle({
@@ -76,6 +167,20 @@ Tab:CreateToggle({
     end
 })
 
+Tab:CreateToggle({
+    Name = "Fly Fling",
+    CurrentValue = false,
+    Callback = function(state)
+        if state then
+            StartFlyFling()
+            Status:Set("Fly Fling: Active | Speed: " .. FlySpeed)
+        else
+            StopFlyFling()
+            Status:Set("Fly Fling: Inactive")
+        end
+    end
+})
+
 Tab:CreateSlider({
     Name = "Velocity Multiplier",
     Range = {1000, 100000},
@@ -85,15 +190,32 @@ Tab:CreateSlider({
         VelocityMultiplier = value
         if TouchFlingActive then
             Status:Set("Touch Fling: Active | Velocity: " .. value)
+        elseif FlyFlingActive then
+            Status:Set("Fly Fling: Active | Velocity: " .. value)
         else
             Status:Set("Velocity set to: " .. value)
         end
     end
 })
 
+Tab:CreateSlider({
+    Name = "Fly Speed",
+    Range = {10, 200},
+    Increment = 5,
+    CurrentValue = FlySpeed,
+    Callback = function(value)
+        FlySpeed = value
+        if FlyFlingActive then
+            Status:Set("Fly Fling: Active | Speed: " .. value)
+        else
+            Status:Set("Fly Speed set to: " .. value)
+        end
+    end
+})
+
 Rayfield:Notify({
-    Title = "Fling Control",
-    Content = "Velocity controlled fling system loaded",
+    Title = "Fling Hub",
+    Content = "Touch Fling & Fly Fling systems loaded",
     Duration = 3,
 })
 
