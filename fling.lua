@@ -7,7 +7,7 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Window = Rayfield:CreateWindow({
     Name = "Fling Hub",
     LoadingTitle = "Fling Hub",
-    LoadingSubtitle = "Touch Fling Only",
+    LoadingSubtitle = "Ultimate Fling Gui",
     ConfigurationSaving = {Enabled = true, FolderName = "FlingHub"},
     KeySystem = false,
 })
@@ -16,25 +16,43 @@ local Tab = Window:CreateTab("Fling", 6035057668)
 local Status = Tab:CreateLabel("Status: Ready")
 
 local TouchFlingActive = false
+local flingThread 
+
+-- Add detection part (from the GUI script)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+if not ReplicatedStorage:FindFirstChild("juisdfj0i32i0eidsuf0iok") then
+    local detection = Instance.new("Decal")
+    detection.Name = "juisdfj0i32i0eidsuf0iok"
+    detection.Parent = ReplicatedStorage
+end
+
+local function fling()
+    local lp = Players.LocalPlayer
+    local c, hrp, vel, movel = nil, nil, nil, 0.1
+
+    while TouchFlingActive do
+        RunService.Heartbeat:Wait()
+        c = lp.Character
+        hrp = c and c:FindFirstChild("HumanoidRootPart")
+
+        if hrp then
+            vel = hrp.Velocity
+            hrp.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
+            RunService.RenderStepped:Wait()
+            hrp.Velocity = vel
+            RunService.Stepped:Wait()
+            hrp.Velocity = vel + Vector3.new(0, movel, 0)
+            movel = -movel
+        end
+    end
+end
 
 local function StartTouchFling()
     if TouchFlingActive then return end
     TouchFlingActive = true
     
-    spawn(function()
-        while TouchFlingActive do
-            local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local oldVel = hrp.Velocity
-                
-                hrp.Velocity = oldVel * 30000 + Vector3.new(0, 200, 0)  
-                RunService.RenderStepped:Wait()
-                
-                hrp.Velocity = oldVel
-            end
-            task.wait()
-        end
-    end)
+    flingThread = coroutine.create(fling)
+    coroutine.resume(flingThread)
 end
 
 local function StopTouchFling()
