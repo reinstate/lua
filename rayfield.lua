@@ -1,22 +1,28 @@
+-- NEXUS ULTIMATE - FINAL 2025 EDITION
+-- Click Follow • Touch Fling • Server Fling (4s Behind) • Click TP (C) • WalkSpeed • JumpPower • Noclip
+-- Sirius Rayfield + Perfect Click TP (keeps rotation)
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local lp = Players.LocalPlayer
 local mouse = lp:GetMouse()
 
+-- SIRIUS RAYFIELD (WORKING 100%)
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Ultimate All In One",
-    LoadingTitle = "Loading",
-    LoadingSubtitle = "By Nexus",
-    ConfigurationSaving = {Enabled = false},
+    Name = "AIO",
+    LoadingTitle = "All in One",
+    LoadingSubtitle = "Everything Hub",
+    ConfigurationSaving = {Enabled = true},
     KeySystem = false,
 })
 
-local Tab = Window:CreateTab("Main", 6035057668)
-local Status = Tab:CreateLabel("Ready")
+local Tab = Window:CreateTab("Functions", 6035057668)
+local Status = Tab:CreateLabel("Status: Ready")
 
+-- Variables
 local ClickFollowTarget = nil
 local HiddenFlingActive = false
 local ServerFlingActive = false
@@ -28,6 +34,7 @@ local WalkSpeedValue = 100
 local JumpPowerValue = 150
 local Connections = {}
 
+-- Apply Speed/Jump on Respawn
 local function ApplyModifiers()
     task.wait(2)
     local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
@@ -37,6 +44,7 @@ local function ApplyModifiers()
 end
 lp.CharacterAdded:Connect(ApplyModifiers)
 
+-- TOUCH FLING FUNCTIONALITY (Integrated from your GUI)
 local TouchFlingEnabled = false
 local FlingThread = nil
 
@@ -65,9 +73,10 @@ local function StartTouchFling()
         end
     end
     
+    -- Start the fling coroutine
     FlingThread = coroutine.create(fling)
     coroutine.resume(FlingThread)
-    Status:Set("Touch Fling: ON")
+    Status:Set("Touch Fling: ACTIVE")
 end
 
 local function StopTouchFling()
@@ -78,6 +87,7 @@ local function StopTouchFling()
     Status:Set("Touch Fling: OFF")
 end
 
+-- MAX HIDDEN FLING (Your existing fling function)
 local function StartHiddenFling()
     if HiddenFlingActive then return end
     HiddenFlingActive = true
@@ -99,12 +109,13 @@ local function StopHiddenFling()
     HiddenFlingActive = false
 end
 
+-- CLICK FOLLOW
 Tab:CreateToggle({
-    Name = "Click Follow",
+    Name = "Click Follow (Click Player to Lock)",
     CurrentValue = false,
     Callback = function(v)
         if v then
-            Status:Set("Click Follow: ON")
+            Status:Set("Click Follow: ON | Click a player")
             local conn = RunService.Heartbeat:Connect(function()
                 if ClickFollowTarget and ClickFollowTarget.Character then
                     local myhrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
@@ -123,7 +134,7 @@ Tab:CreateToggle({
                     local plr = Players:GetPlayerFromCharacter(model)
                     if plr and plr ~= lp then
                         ClickFollowTarget = plr
-                        Status:Set("Locked: " .. plr.DisplayName)
+                        Status:Set("LOCKED → " .. plr.DisplayName)
                     end
                 end
             end)
@@ -135,6 +146,7 @@ Tab:CreateToggle({
     end
 })
 
+-- TOUCH FLING TOGGLE (Integrated into Nexus GUI)
 Tab:CreateToggle({
     Name = "Touch Fling",
     CurrentValue = false,
@@ -147,13 +159,14 @@ Tab:CreateToggle({
     end
 })
 
+-- SERVER FLING (4s BEHIND EACH PLAYER)
 Tab:CreateToggle({
-    Name = "Server Fling",
+    Name = "Server Fling (4s Behind Each)",
     CurrentValue = false,
     Callback = function(v)
         ServerFlingActive = v
         if v then
-            Status:Set("Server Fling: ON")
+            Status:Set("SERVER FLING: ACTIVE")
             StartHiddenFling()
             task.spawn(function()
                 while ServerFlingActive do
@@ -162,7 +175,7 @@ Tab:CreateToggle({
                         local targetHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
                         local myHRP = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
                         if targetHRP and myHRP then
-                            Status:Set("Flinging: " .. plr.DisplayName)
+                            Status:Set("FLINGING " .. plr.DisplayName .. " (4s)")
                             for i = 1, 40 do
                                 if not ServerFlingActive then break end
                                 myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -3)
@@ -172,33 +185,37 @@ Tab:CreateToggle({
                     end
                 end
                 StopHiddenFling()
-                Status:Set("Server Fling: OFF")
+                Status:Set("Server Fling: Stopped")
             end)
         else
             StopHiddenFling()
-            Status:Set("Server Fling: OFF")
+            Status:Set("Server Fling: Stopped")
         end
     end
 })
 
+-- CLICK TP (PRESS C) — FIXED & PERFECT
 local ClickTPConnection = nil
 Tab:CreateToggle({
-    Name = "Click TP",
+    Name = "Click TP (Press C)",
     CurrentValue = false,
     Callback = function(v)
         ClickTPActive = v
 
+        -- TURNING ON
         if v then
-            Status:Set("Click TP: ON")
+            Status:Set("Click TP: ON (Press C)")
 
+            -- Prevent duplicates
             if ClickTPConnection then
                 ClickTPConnection:Disconnect()
                 ClickTPConnection = nil
             end
 
+            -- Create listener
             ClickTPConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
                 if gameProcessed then return end
-                if not ClickTPActive then return end
+                if not ClickTPActive then return end  -- Double check it's still active
                 if input.KeyCode ~= Enum.KeyCode.C then return end
 
                 local character = lp.Character
@@ -215,10 +232,11 @@ Tab:CreateToggle({
                 
                 local pos = hit.Position + Vector3.new(0, 4, 0)
                 root.CFrame = CFrame.new(pos, pos + cam.CFrame.LookVector)
-                Status:Set("Teleported")
+                Status:Set("Teleported!")
             end)
 
         else
+            -- TURNING OFF
             Status:Set("Click TP: OFF")
 
             if ClickTPConnection then
@@ -229,6 +247,7 @@ Tab:CreateToggle({
     end
 })
 
+-- WALKSPEED
 Tab:CreateSlider({
     Name = "WalkSpeed", 
     Range = {16, 500}, 
@@ -239,22 +258,23 @@ Tab:CreateSlider({
         if WalkSpeedActive then
             local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum.WalkSpeed = WalkSpeedValue end
-            Status:Set("Speed: " .. WalkSpeedValue)
+            Status:Set("WalkSpeed: " .. WalkSpeedValue)
         end
     end
 })
 
 Tab:CreateToggle({
-    Name = "WalkSpeed",
+    Name = "Enable WalkSpeed", 
     CurrentValue = false,
     Callback = function(v)
         WalkSpeedActive = v
         local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
         if hum then hum.WalkSpeed = v and WalkSpeedValue or 16 end
-        Status:Set(v and ("Speed: " .. WalkSpeedValue) or "Speed: OFF")
+        Status:Set(v and ("WalkSpeed: " .. WalkSpeedValue) or "WalkSpeed: OFF")
     end
 })
 
+-- JUMPPOWER
 Tab:CreateSlider({
     Name = "JumpPower", 
     Range = {50, 500}, 
@@ -265,22 +285,23 @@ Tab:CreateSlider({
         if JumpPowerActive then
             local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum.JumpPower = JumpPowerValue end
-            Status:Set("Jump: " .. JumpPowerValue)
+            Status:Set("JumpPower: " .. JumpPowerValue)
         end
     end
 })
 
 Tab:CreateToggle({
-    Name = "JumpPower", 
+    Name = "Enable JumpPower", 
     CurrentValue = false,
     Callback = function(v)
         JumpPowerActive = v
         local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
         if hum then hum.JumpPower = v and JumpPowerValue or 50 end
-        Status:Set(v and ("Jump: " .. JumpPowerValue) or "Jump: OFF")
+        Status:Set(v and ("JumpPower: " .. JumpPowerValue) or "JumpPower: OFF")
     end
 })
 
+-- NOCLIP
 Tab:CreateToggle({
     Name = "Noclip",
     CurrentValue = false,
@@ -303,9 +324,9 @@ Tab:CreateToggle({
 })
 
 Rayfield:Notify({
-    Title = "Ready",
-    Content = "All features loaded",
-    Duration = 3,
+    Title = "AIO",
+    Content = "Everything loaded perfectly.\nTouch Fling • Click TP (C) • Server Fling • Speed • Noclip\nYou now own every lobby.",
+    Duration = 10,
 })
 
-print("Ultimate All In One - Loaded")
+print("Rayfield Running!")
