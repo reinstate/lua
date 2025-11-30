@@ -1,6 +1,3 @@
--- FLING HUB ULTIMATE – PURE FLING EDITION
--- Touch Fling (T) • Server Fling (G) • Customizable Keybinds • Saves Config
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
