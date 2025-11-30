@@ -192,7 +192,7 @@ MainTab:CreateToggle({
 -- Settings Tab (Sliders)
 SettingsTab:CreateSlider({
     Name = "Velocity Multiplier",
-    Range = {1000, 100000},
+    Range = {1000, 1000000},
     Increment = 1000,
     CurrentValue = VelocityMultiplier,
     Callback = function(value)
