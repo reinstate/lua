@@ -1,98 +1,184 @@
--- NEXUS ULTIMATE - FINAL 2025 EDITION
--- Click Follow • Touch Fling • Server Fling (4s Behind) • Click TP (C) • WalkSpeed • JumpPower • Noclip
--- Sirius Rayfield + Perfect Click TP (keeps rotation)
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local lp = Players.LocalPlayer
 local mouse = lp:GetMouse()
 
--- SIRIUS RAYFIELD (WORKING 100%)
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "AIO",
-    LoadingTitle = "All in One",
-    LoadingSubtitle = "Everything Hub",
-    ConfigurationSaving = {Enabled = true},
+    Name = "⚡ NEXUS AIO",
+    LoadingTitle = "NEXUS AIO Loading...",
+    LoadingSubtitle = "Premium All-In-One Hub",
+    ConfigurationSaving = {Enabled = true, FolderName = "NexusAIO"},
     KeySystem = false,
+    Theme = {
+        BackgroundColor = Color3.fromRGB(10, 10, 10),
+        SectionBackgroundColor = Color3.fromRGB(20, 20, 20)
+    }
 })
 
-local Tab = Window:CreateTab("Functions", 6035057668)
-local Status = Tab:CreateLabel("Status: Ready")
+local MainTab = Window:CreateTab("🎮 Main Features", 6035057668)
+local SettingsTab = Window:CreateTab("⚙️ Settings", 7733765391)
 
--- Variables
-local ClickFollowTarget = nil
-local HiddenFlingActive = false
-local ServerFlingActive = false
-local ClickTPActive = false
-local WalkSpeedActive = false
-local JumpPowerActive = false
-local NoclipActive = false
-local WalkSpeedValue = 100
-local JumpPowerValue = 150
+local Status = MainTab:CreateLabel("🟢 Status: Ready")
+
+-- Configuration
+local Config = {
+    Keybinds = {
+        ClickTP = Enum.KeyCode.C,
+        Fly = Enum.KeyCode.F,
+        Noclip = Enum.KeyCode.V
+    },
+    Defaults = {
+        WalkSpeed = 100,
+        JumpPower = 150,
+        FlySpeed = 50
+    }
+}
+
+-- State Management
+local States = {
+    ClickFollow = {Active = false, Target = nil},
+    TouchFling = {Active = false},
+    ServerFling = {Active = false},
+    ClickTP = {Active = false},
+    Fly = {Active = false, BodyVelocity = nil, BodyGyro = nil},
+    WalkSpeed = {Active = false, Value = Config.Defaults.WalkSpeed},
+    JumpPower = {Active = false, Value = Config.Defaults.JumpPower},
+    Noclip = {Active = false}
+}
+
 local Connections = {}
 
--- Apply Speed/Jump on Respawn
-local function ApplyModifiers()
+-- Core Functions
+local function ApplyCharacterModifiers()
     task.wait(2)
     local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
     if not hum then return end
-    if WalkSpeedActive then hum.WalkSpeed = WalkSpeedValue end
-    if JumpPowerActive then hum.JumpPower = JumpPowerValue end
+    
+    if States.WalkSpeed.Active then hum.WalkSpeed = States.WalkSpeed.Value end
+    if States.JumpPower.Active then hum.JumpPower = States.JumpPower.Value end
 end
-lp.CharacterAdded:Connect(ApplyModifiers)
 
--- TOUCH FLING FUNCTIONALITY (Integrated from your GUI)
-local TouchFlingEnabled = false
-local FlingThread = nil
+lp.CharacterAdded:Connect(ApplyCharacterModifiers)
 
+-- Fly System
+local function StartFlying()
+    if States.Fly.Active then return end
+    States.Fly.Active = true
+    
+    local character = lp.Character
+    if not character then return end
+    
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    -- Create fly controllers
+    States.Fly.BodyVelocity = Instance.new("BodyVelocity")
+    States.Fly.BodyGyro = Instance.new("BodyGyro")
+    
+    States.Fly.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    States.Fly.BodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+    States.Fly.BodyVelocity.Parent = root
+    
+    States.Fly.BodyGyro.D = 50
+    States.Fly.BodyGyro.P = 1000
+    States.Fly.BodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+    States.Fly.BodyGyro.CFrame = root.CFrame
+    States.Fly.BodyGyro.Parent = root
+    
+    Status:Set("🚀 Fly: ACTIVE (F to toggle)")
+    
+    local flyConnection
+    flyConnection = RunService.Heartbeat:Connect(function()
+        if not States.Fly.Active or not character or not root then 
+            flyConnection:Disconnect()
+            return 
+        end
+        
+        local cam = workspace.CurrentCamera
+        local moveDirection = Vector3.new(0, 0, 0)
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDirection = moveDirection + cam.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDirection = moveDirection - cam.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDirection = moveDirection - cam.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDirection = moveDirection + cam.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            moveDirection = moveDirection + Vector3.new(0, 1, 0)
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            moveDirection = moveDirection - Vector3.new(0, 1, 0)
+        end
+        
+        if moveDirection.Magnitude > 0 then
+            States.Fly.BodyVelocity.Velocity = moveDirection.Unit * Config.Defaults.FlySpeed
+        else
+            States.Fly.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+        
+        States.Fly.BodyGyro.CFrame = cam.CFrame
+    end)
+    
+    table.insert(Connections, flyConnection)
+end
+
+local function StopFlying()
+    States.Fly.Active = false
+    if States.Fly.BodyVelocity then
+        States.Fly.BodyVelocity:Destroy()
+        States.Fly.BodyVelocity = nil
+    end
+    if States.Fly.BodyGyro then
+        States.Fly.BodyGyro:Destroy()
+        States.Fly.BodyGyro = nil
+    end
+    Status:Set("✈️ Fly: OFF")
+end
+
+-- Touch Fling System
 local function StartTouchFling()
-    if TouchFlingEnabled then return end
-    TouchFlingEnabled = true
+    if States.TouchFling.Active then return end
+    States.TouchFling.Active = true
     
     local function fling()
-        local lp = Players.LocalPlayer
-        local c, hrp, vel, movel = nil, nil, nil, 0.1
-    
-        while TouchFlingEnabled do
+        while States.TouchFling.Active do
             RunService.Heartbeat:Wait()
-            c = lp.Character
-            hrp = c and c:FindFirstChild("HumanoidRootPart")
-    
+            local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
-                vel = hrp.Velocity
+                local vel = hrp.Velocity
                 hrp.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
                 RunService.RenderStepped:Wait()
                 hrp.Velocity = vel
-                RunService.Stepped:Wait()
-                hrp.Velocity = vel + Vector3.new(0, movel, 0)
-                movel = -movel
             end
         end
     end
     
-    -- Start the fling coroutine
-    FlingThread = coroutine.create(fling)
-    coroutine.resume(FlingThread)
-    Status:Set("Touch Fling: ACTIVE")
+    task.spawn(fling)
+    Status:Set("💥 Touch Fling: ACTIVE")
 end
 
 local function StopTouchFling()
-    TouchFlingEnabled = false
-    if FlingThread then
-        FlingThread = nil
-    end
-    Status:Set("Touch Fling: OFF")
+    States.TouchFling.Active = false
+    Status:Set("💥 Touch Fling: OFF")
 end
 
--- MAX HIDDEN FLING (Your existing fling function)
+-- Hidden Fling System
 local function StartHiddenFling()
-    if HiddenFlingActive then return end
-    HiddenFlingActive = true
-    spawn(function()
-        while HiddenFlingActive do
+    if States.ServerFling.Active then return end
+    States.ServerFling.Active = true
+    
+    task.spawn(function()
+        while States.ServerFling.Active do
             local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
                 local old = hrp.Velocity
@@ -106,49 +192,129 @@ local function StartHiddenFling()
 end
 
 local function StopHiddenFling()
-    HiddenFlingActive = false
+    States.ServerFling.Active = false
 end
 
--- CLICK FOLLOW
-Tab:CreateToggle({
-    Name = "Click Follow (Click Player to Lock)",
+-- Keybind System
+local function SetupKeybinds()
+    -- Fly Toggle
+    local flyBind = UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == Config.Keybinds.Fly then
+            if States.Fly.Active then
+                StopFlying()
+            else
+                StartFlying()
+            end
+        end
+    end)
+    table.insert(Connections, flyBind)
+    
+    -- Noclip Toggle
+    local noclipBind = UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == Config.Keybinds.Noclip then
+            States.Noclip.Active = not States.Noclip.Active
+            if States.Noclip.Active then
+                local conn = RunService.Stepped:Connect(function()
+                    if lp.Character then
+                        for _, part in ipairs(lp.Character:GetDescendants()) do
+                            if part:IsA("BasePart") then part.CanCollide = false end
+                        end
+                    end
+                end)
+                table.insert(Connections, conn)
+                Status:Set("👻 Noclip: ACTIVE (V to toggle)")
+            else
+                Status:Set("👻 Noclip: OFF")
+            end
+        end
+    end)
+    table.insert(Connections, noclipBind)
+end
+
+-- UI Elements
+MainTab:CreateSection("🎯 Movement")
+
+MainTab:CreateToggle({
+    Name = "🚀 Fly (Press F)",
     CurrentValue = false,
     Callback = function(v)
         if v then
-            Status:Set("Click Follow: ON | Click a player")
-            local conn = RunService.Heartbeat:Connect(function()
-                if ClickFollowTarget and ClickFollowTarget.Character then
+            StartFlying()
+        else
+            StopFlying()
+        end
+    end
+})
+
+MainTab:CreateToggle({
+    Name = "📡 Click TP (Press C)",
+    CurrentValue = false,
+    Callback = function(v)
+        States.ClickTP.Active = v
+        if v then
+            Status:Set("📡 Click TP: ACTIVE (C to teleport)")
+            local connection = UserInputService.InputBegan:Connect(function(input, processed)
+                if processed then return end
+                if not States.ClickTP.Active then return end
+                if input.KeyCode == Config.Keybinds.ClickTP then
+                    local root = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                    local cam = workspace.CurrentCamera
+                    if root and cam then
+                        local pos = mouse.Hit.Position + Vector3.new(0, 4, 0)
+                        root.CFrame = CFrame.new(pos, pos + cam.CFrame.LookVector)
+                        Status:Set("✨ Teleported!")
+                    end
+                end
+            end)
+            table.insert(Connections, connection)
+        else
+            Status:Set("📡 Click TP: OFF")
+        end
+    end
+})
+
+MainTab:CreateToggle({
+    Name = "👥 Click Follow",
+    CurrentValue = false,
+    Callback = function(v)
+        if v then
+            Status:Set("👥 Click Follow: ACTIVE - Click a player")
+            local followConnection = RunService.Heartbeat:Connect(function()
+                if States.ClickFollow.Target and States.ClickFollow.Target.Character then
                     local myhrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                    local tgt = ClickFollowTarget.Character:FindFirstChild("HumanoidRootPart")
+                    local tgt = States.ClickFollow.Target.Character:FindFirstChild("HumanoidRootPart")
                     if myhrp and tgt then
                         myhrp.CFrame = tgt.CFrame + Vector3.new(0, 3, 0)
                     end
                 end
             end)
-            table.insert(Connections, conn)
+            table.insert(Connections, followConnection)
 
-            local click = mouse.Button1Down:Connect(function()
-                local t = mouse.Target
-                if t then
-                    local model = t:FindFirstAncestorWhichIsA("Model")
-                    local plr = Players:GetPlayerFromCharacter(model)
-                    if plr and plr ~= lp then
-                        ClickFollowTarget = plr
-                        Status:Set("LOCKED → " .. plr.DisplayName)
+            local clickConnection = mouse.Button1Down:Connect(function()
+                local target = mouse.Target
+                if target then
+                    local model = target:FindFirstAncestorWhichIsA("Model")
+                    local player = Players:GetPlayerFromCharacter(model)
+                    if player and player ~= lp then
+                        States.ClickFollow.Target = player
+                        Status:Set("🎯 Locked: " .. player.DisplayName)
                     end
                 end
             end)
-            table.insert(Connections, click)
+            table.insert(Connections, clickConnection)
         else
-            ClickFollowTarget = nil
-            Status:Set("Click Follow: OFF")
+            States.ClickFollow.Target = nil
+            Status:Set("👥 Click Follow: OFF")
         end
     end
 })
 
--- TOUCH FLING TOGGLE (Integrated into Nexus GUI)
-Tab:CreateToggle({
-    Name = "Touch Fling",
+MainTab:CreateSection("💥 Combat")
+
+MainTab:CreateToggle({
+    Name = "💥 Touch Fling",
     CurrentValue = false,
     Callback = function(v)
         if v then
@@ -159,25 +325,24 @@ Tab:CreateToggle({
     end
 })
 
--- SERVER FLING (4s BEHIND EACH PLAYER)
-Tab:CreateToggle({
-    Name = "Server Fling (4s Behind Each)",
+MainTab:CreateToggle({
+    Name = "🌐 Server Fling",
     CurrentValue = false,
     Callback = function(v)
-        ServerFlingActive = v
+        States.ServerFling.Active = v
         if v then
-            Status:Set("SERVER FLING: ACTIVE")
+            Status:Set("🌐 Server Fling: ACTIVE")
             StartHiddenFling()
             task.spawn(function()
-                while ServerFlingActive do
-                    for _, plr in Players:GetPlayers() do
-                        if not ServerFlingActive or plr == lp then continue end
-                        local targetHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                while States.ServerFling.Active do
+                    for _, player in Players:GetPlayers() do
+                        if not States.ServerFling.Active or player == lp then continue end
+                        local targetHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                         local myHRP = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
                         if targetHRP and myHRP then
-                            Status:Set("FLINGING " .. plr.DisplayName .. " (4s)")
+                            Status:Set("🌀 Flinging: " .. player.DisplayName)
                             for i = 1, 40 do
-                                if not ServerFlingActive then break end
+                                if not States.ServerFling.Active then break end
                                 myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, -3)
                                 task.wait(0.1)
                             end
@@ -185,148 +350,112 @@ Tab:CreateToggle({
                     end
                 end
                 StopHiddenFling()
-                Status:Set("Server Fling: Stopped")
             end)
         else
             StopHiddenFling()
-            Status:Set("Server Fling: Stopped")
+            Status:Set("🌐 Server Fling: OFF")
         end
     end
 })
 
--- CLICK TP (PRESS C) — FIXED & PERFECT
-local ClickTPConnection = nil
-Tab:CreateToggle({
-    Name = "Click TP (Press C)",
-    CurrentValue = false,
+MainTab:CreateSection("⚡ Stats")
+
+local speedSlider = MainTab:CreateSlider({
+    Name = "🏃‍♂️ Walk Speed",
+    Range = {16, 500},
+    Increment = 5,
+    CurrentValue = Config.Defaults.WalkSpeed,
     Callback = function(v)
-        ClickTPActive = v
-
-        -- TURNING ON
-        if v then
-            Status:Set("Click TP: ON (Press C)")
-
-            -- Prevent duplicates
-            if ClickTPConnection then
-                ClickTPConnection:Disconnect()
-                ClickTPConnection = nil
-            end
-
-            -- Create listener
-            ClickTPConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                if gameProcessed then return end
-                if not ClickTPActive then return end  -- Double check it's still active
-                if input.KeyCode ~= Enum.KeyCode.C then return end
-
-                local character = lp.Character
-                if not character then return end
-                
-                local root = character:FindFirstChild("HumanoidRootPart")
-                if not root then return end
-
-                local cam = workspace.CurrentCamera
-                if not cam then return end
-                
-                local hit = mouse.Hit
-                if not hit then return end
-                
-                local pos = hit.Position + Vector3.new(0, 4, 0)
-                root.CFrame = CFrame.new(pos, pos + cam.CFrame.LookVector)
-                Status:Set("Teleported!")
-            end)
-
-        else
-            -- TURNING OFF
-            Status:Set("Click TP: OFF")
-
-            if ClickTPConnection then
-                ClickTPConnection:Disconnect()
-                ClickTPConnection = nil
-            end
-        end
-    end
-})
-
--- WALKSPEED
-Tab:CreateSlider({
-    Name = "WalkSpeed", 
-    Range = {16, 500}, 
-    Increment = 5, 
-    CurrentValue = 100,
-    Callback = function(v) 
-        WalkSpeedValue = v 
-        if WalkSpeedActive then
+        States.WalkSpeed.Value = v
+        if States.WalkSpeed.Active then
             local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = WalkSpeedValue end
-            Status:Set("WalkSpeed: " .. WalkSpeedValue)
+            if hum then hum.WalkSpeed = v end
+            Status:Set("🏃‍♂️ Speed: " .. v)
         end
     end
 })
 
-Tab:CreateToggle({
-    Name = "Enable WalkSpeed", 
+MainTab:CreateToggle({
+    Name = "🏃‍♂️ Enable Walk Speed",
     CurrentValue = false,
     Callback = function(v)
-        WalkSpeedActive = v
+        States.WalkSpeed.Active = v
         local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = v and WalkSpeedValue or 16 end
-        Status:Set(v and ("WalkSpeed: " .. WalkSpeedValue) or "WalkSpeed: OFF")
+        if hum then 
+            hum.WalkSpeed = v and States.WalkSpeed.Value or 16 
+            Status:Set(v and ("🏃‍♂️ Speed: " .. States.WalkSpeed.Value) or "🏃‍♂️ Speed: OFF")
+        end
     end
 })
 
--- JUMPPOWER
-Tab:CreateSlider({
-    Name = "JumpPower", 
-    Range = {50, 500}, 
-    Increment = 5, 
-    CurrentValue = 150,
-    Callback = function(v) 
-        JumpPowerValue = v 
-        if JumpPowerActive then
+local jumpSlider = MainTab:CreateSlider({
+    Name = "🦘 Jump Power",
+    Range = {50, 500},
+    Increment = 5,
+    CurrentValue = Config.Defaults.JumpPower,
+    Callback = function(v)
+        States.JumpPower.Value = v
+        if States.JumpPower.Active then
             local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.JumpPower = JumpPowerValue end
-            Status:Set("JumpPower: " .. JumpPowerValue)
+            if hum then hum.JumpPower = v end
+            Status:Set("🦘 Jump: " .. v)
         end
     end
 })
 
-Tab:CreateToggle({
-    Name = "Enable JumpPower", 
+MainTab:CreateToggle({
+    Name = "🦘 Enable Jump Power",
     CurrentValue = false,
     Callback = function(v)
-        JumpPowerActive = v
+        States.JumpPower.Active = v
         local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.JumpPower = v and JumpPowerValue or 50 end
-        Status:Set(v and ("JumpPower: " .. JumpPowerValue) or "JumpPower: OFF")
-    end
-})
-
--- NOCLIP
-Tab:CreateToggle({
-    Name = "Noclip",
-    CurrentValue = false,
-    Callback = function(v)
-        NoclipActive = v
-        if v then
-            local conn = RunService.Stepped:Connect(function()
-                if lp.Character then
-                    for _, p in ipairs(lp.Character:GetDescendants()) do
-                        if p:IsA("BasePart") then p.CanCollide = false end
-                    end
-                end
-            end)
-            table.insert(Connections, conn)
-            Status:Set("Noclip: ON")
-        else
-            Status:Set("Noclip: OFF")
+        if hum then 
+            hum.JumpPower = v and States.JumpPower.Value or 50 
+            Status:Set(v and ("🦘 Jump: " .. States.JumpPower.Value) or "🦘 Jump: OFF")
         end
     end
 })
+
+-- Settings Tab
+SettingsTab:CreateSection("🎹 Keybinds")
+
+SettingsTab:CreateKeybind({
+    Name = "Click TP Key",
+    CurrentKeybind = Config.Keybinds.ClickTP,
+    Callback = function(Key)
+        Config.Keybinds.ClickTP = Key
+        Status:Set("🔑 Click TP keybind updated")
+    end
+})
+
+SettingsTab:CreateKeybind({
+    Name = "Fly Key",
+    CurrentKeybind = Config.Keybinds.Fly,
+    Callback = function(Key)
+        Config.Keybinds.Fly = Key
+        Status:Set("🔑 Fly keybind updated")
+    end
+})
+
+SettingsTab:CreateKeybind({
+    Name = "Noclip Key",
+    CurrentKeybind = Config.Keybinds.Noclip,
+    Callback = function(Key)
+        Config.Keybinds.Noclip = Key
+        Status:Set("🔑 Noclip keybind updated")
+    end
+})
+
+-- Initialize
+SetupKeybinds()
 
 Rayfield:Notify({
-    Title = "AIO",
-    Content = "Everything loaded perfectly.\nTouch Fling • Click TP (C) • Server Fling • Speed • Noclip\nYou now own every lobby.",
-    Duration = 10,
+    Title = "⚡ NEXUS AIO LOADED",
+    Content = "All features activated!\n• Fly (F) • Click TP (C) • Noclip (V)\n• Touch Fling • Server Fling • Stats",
+    Duration = 6,
+    Image = 6035057668
 })
 
-print("Rayfield Running!")
+Status:Set("🎉 NEXUS AIO Ready! Check keybinds in Settings.")
+
+print("⚡ NEXUS AIO - Fully Loaded & Optimized")
