@@ -8,7 +8,7 @@ local Window = Rayfield:CreateWindow({
     Name = "Fling Hub",
     LoadingTitle = "Fling Hub",
     LoadingSubtitle = "Loading systems...",
-    ConfigurationSaving = {Enabled = true, FolderName = "FlingControl"},
+    ConfigurationSaving = {Enabled = true, FolderName = "FlingHub"},
     KeySystem = false,
 })
 
