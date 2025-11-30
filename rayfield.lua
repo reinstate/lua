@@ -1,6 +1,3 @@
--- Ultimate All In One
--- Click Follow • Touch Fling • Server Fling • Click TP • WalkSpeed • JumpPower • Noclip
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
