@@ -10,88 +10,92 @@ local Mouse = lp:GetMouse()
 -- Rayfield UI
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 local Window = Rayfield:CreateWindow({
-    Name = "Prison Life Ultimate Aimbot",
-    LoadingTitle = "Loading Unified ESP Aimbot...",
-    LoadingSubtitle = "All-in-One ESP Box - Organized Layout - Hold E Activation",
+    Name = "prison life ultimate aimbot",
+    LoadingTitle = "loading unified esp aimbot...",
+    LoadingSubtitle = "all-in-one esp box - organized layout - hold LMB activation",
     ConfigurationSaving = { Enabled = true, FolderName = "PLUnifiedESP" },
     KeySystem = false
 })
 
 -- Clean Tabs
-local MainTab = Window:CreateTab("Aimbot")
-local VisualTab = Window:CreateTab("Visuals")
-local SettingsTab = Window:CreateTab("Settings")
+local MainTab = Window:CreateTab("aimbot")
+local VisualTab = Window:CreateTab("visuals")
+local SettingsTab = Window:CreateTab("settings")
 
 -- Enhanced Config
 local Config = {
     -- Aimbot
-    AimbotEnabled = true,
-    HoldKey = Enum.KeyCode.E,
+    AimbotEnabled = false,
+    HoldKey = Enum.UserInputType.MouseButton1, -- LMB
     FOVRadius = 150,
     TargetPart = "Head",
-    Smoothing = 0.08,
-    AimbotSpeed = 1.0,
+    Smoothing = 0.05,
+    AimbotSpeed = 1.2,
     Prediction = true,
-    PredictionStrength = 1.15,
+    PredictionStrength = 1.25,
     BulletSpeed = 2200,
-    AutoShoot = true,
-    ShootDelay = 0.12,
+    AutoShoot = false,
+    ShootDelay = 0.1,
     
     -- Advanced Tracking
     AdvancedTracking = true,
-    MaxTrackingAngle = 120,
+    MaxTrackingAngle = 90,
+    HitChance = 95,
     
     -- Team Management
-    TeamCheck = true,
+    TeamCheck = false,
     IgnoredTeams = {},
     
     -- Color System
-    ColorMode = "Rainbow",
-    StaticColor = Color3.fromRGB(148, 0, 211),
-    RainbowSpeed = 5,
+    ColorMode = "team", -- team, full
+    FullColor = Color3.fromRGB(255, 50, 50),
     
     -- ESP
-    ESPEnabled = true,
-    Tracers = true,
-    UnifiedESPBox = true, -- NEW: Unified ESP Box toggle
-    BoxTransparency = 0.7, -- NEW: Box transparency
-    BoxSize = 120, -- NEW: Box width
-    ShowHealthBar = true,
-    ShowWeapon = true,
-    ShowDistance = true,
+    ESPEnabled = false,
+    Tracers = false,
+    ShowHealthBar = false,
+    ShowWeapon = false,
+    ShowDistance = false,
+    SkeletonESP = false, -- New: Skeleton highlight
     
     -- Aimbot FOV
-    AimbotFOV = true
+    AimbotFOV = false
 }
 
 -- FOV Circle (centered to mouse)
 local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness = 2
+FOVCircle.Thickness = 1
 FOVCircle.NumSides = 64
 FOVCircle.Radius = Config.FOVRadius
 FOVCircle.Filled = false
 FOVCircle.Transparency = 0.9
-FOVCircle.Color = Config.StaticColor
-FOVCircle.Visible = true
+FOVCircle.Color = Config.FullColor
+FOVCircle.Visible = false
 
--- ESP Storage for Unified Box System
+-- ESP Storage
 local ESP = {
-    MainBox = {}, -- Unified main box
     Tracers = {},
     NameText = {},
     HealthText = {},
     WeaponText = {},
     DistanceText = {},
     HealthBar = {},
-    HealthBarBackground = {}
+    HealthBarBackground = {},
+    -- Skeleton parts
+    Head = {},
+    Torso = {},
+    LeftArm = {},
+    RightArm = {},
+    LeftLeg = {},
+    RightLeg = {}
 }
 
 -- Global variables
 local CurrentTarget = nil
-local HoldingE = false
+local Holding = false -- LMB
 local LastShot = 0
-local rainbowHue = 0
 local AutoShooting = false
+local TargetLocked = false
 
 -- Notification system
 local function ShowNotification(title, message)
@@ -125,6 +129,15 @@ local function CalculatePrediction(target, part)
     local travelTime = distance / Config.BulletSpeed
     local velocity = hrp.AssemblyLinearVelocity or hrp.Velocity or Vector3.new(0, 0, 0)
     
+    -- Advanced prediction: account for movement patterns
+    local humanoid = target.Character:FindFirstChild("Humanoid")
+    if humanoid then
+        local moveDirection = humanoid.MoveDirection
+        if moveDirection.Magnitude > 0 then
+            velocity = velocity + (moveDirection * humanoid.WalkSpeed * 0.3)
+        end
+    end
+    
     local gravity = workspace.Gravity
     local drop = Vector3.new(0, 0.5 * gravity * travelTime * travelTime, 0)
     
@@ -149,13 +162,46 @@ end
 
 -- Check if player has weapon
 local function GetPlayerWeapon(player)
-    if not player or not player.Character then return "Fist" end
+    if not player or not player.Character then return "fist" end
     local tool = player.Character:FindFirstChildOfClass("Tool")
-    return tool and tool.Name or "Fist"
+    return tool and tool.Name or "fist"
+end
+
+-- Get team color for player
+local function GetTeamColor(player)
+    if not player or not player.Team then return Color3.fromRGB(255, 255, 255) end
+    return player.Team.TeamColor.Color
+end
+
+-- Get visual color based on color mode
+local function GetVisualColor(player)
+    if Config.ColorMode == "full" then
+        return Config.FullColor
+    else
+        return GetTeamColor(player)
+    end
+end
+
+-- Advanced hit chance calculation
+local function ShouldHit(target)
+    if Config.HitChance >= 100 then return true end
+    local random = math.random(1, 100)
+    return random <= Config.HitChance
 end
 
 -- Advanced target finding with FOV and angle tracking
 local function GetBestTarget()
+    -- Advanced: If we have a locked target that's still alive, stick with them
+    if TargetLocked and CurrentTarget and CurrentTarget.Character then
+        local humanoid = CurrentTarget.Character:FindFirstChild("Humanoid")
+        if humanoid and humanoid.Health > 0 then
+            return CurrentTarget
+        else
+            TargetLocked = false
+            CurrentTarget = nil
+        end
+    end
+    
     local best = nil
     local bestScore = -math.huge
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
@@ -174,6 +220,7 @@ local function GetBestTarget()
         if onScreen then
             local score = 0
             
+            -- Advanced: Calculate distance from mouse center with FOV priority
             local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
             local cameraForward = Camera.CFrame.LookVector
             local toTarget = (predictedPos - Camera.CFrame.Position).Unit
@@ -181,24 +228,37 @@ local function GetBestTarget()
             
             if Config.AimbotFOV then
                 if dist <= Config.FOVRadius then
-                    score = score + (Config.FOVRadius - dist)
+                    -- Higher score for targets closer to mouse center
+                    score = score + ((Config.FOVRadius - dist) * 2)
                 else
                     if Config.AdvancedTracking and angle <= Config.MaxTrackingAngle then
-                        score = score + (Config.MaxTrackingAngle - angle) * 0.5
+                        score = score + ((Config.MaxTrackingAngle - angle) * 0.5)
                     else
                         continue
                     end
                 end
             else
                 if Config.AdvancedTracking and angle <= Config.MaxTrackingAngle then
-                    score = score + (Config.MaxTrackingAngle - angle) * 2
+                    score = score + ((Config.MaxTrackingAngle - angle) * 3)
                 else
-                    score = score - angle * 10
+                    score = score - (angle * 15)
                 end
             end
             
+            -- Advanced: Prioritize closer targets and head visibility
             local distance3D = (hrp.Position - Camera.CFrame.Position).Magnitude
-            score = score + (1000 / distance3D)
+            score = score + (1500 / distance3D) -- Increased priority for closer targets
+            
+            -- Bonus for head shots
+            if Config.TargetPart == "Head" then
+                score = score + 50
+            end
+            
+            -- Bonus for stationary targets
+            local velocity = hrp.AssemblyLinearVelocity or hrp.Velocity or Vector3.new(0, 0, 0)
+            if velocity.Magnitude < 2 then
+                score = score + 30
+            end
             
             if score > bestScore then
                 best = plr
@@ -209,7 +269,7 @@ local function GetBestTarget()
     return best
 end
 
--- Improved Auto Shoot function
+-- Improved Auto Shoot function with hit chance
 local function PerformAutoShoot()
     if not Config.AutoShoot or not CurrentTarget or not CurrentTarget.Character then 
         AutoShooting = false
@@ -217,6 +277,11 @@ local function PerformAutoShoot()
     end
     
     if tick() - LastShot >= Config.ShootDelay then
+        -- Advanced: Apply hit chance
+        if not ShouldHit(CurrentTarget) then
+            return
+        end
+        
         local part = CurrentTarget.Character:FindFirstChild(Config.TargetPart) or CurrentTarget.Character.HumanoidRootPart
         if not part then return end
         
@@ -226,66 +291,58 @@ local function PerformAutoShoot()
             ReplicatedStorage.MainEvent:FireServer("Shoot", predictedPos)
             LastShot = tick()
             AutoShooting = true
-            
-            if Config.ColorMode == "Rainbow" then
-                FOVCircle.Color = Color3.fromRGB(255, 255, 0)
-                task.delay(0.1, function()
-                    if CurrentTarget then
-                        FOVCircle.Color = Color3.fromHSV(rainbowHue, 1, 1)
-                    end
-                end)
-            else
-                FOVCircle.Color = Color3.fromRGB(255, 255, 0)
-                task.delay(0.1, function()
-                    if CurrentTarget then
-                        FOVCircle.Color = Config.StaticColor
-                    end
-                end)
-            end
         end
     end
 end
 
--- Create Unified ESP Box System
+-- Create skeleton lines between points
+local function CreateSkeletonLine(player, partName)
+    ESP[partName][player] = Drawing.new("Line")
+    ESP[partName][player].Thickness = 2
+    ESP[partName][player].Visible = false
+end
+
+-- Create ESP System
 local function CreateESP(player)
-    if player == lp or ESP.MainBox[player] then return end
+    if player == lp or ESP.Tracers[player] then return end
     
-    -- Main Unified Box (transparent background)
-    ESP.MainBox[player] = Drawing.new("Square")
-    ESP.MainBox[player].Thickness = 1
-    ESP.MainBox[player].Filled = true
-    ESP.MainBox[player].Transparency = Config.BoxTransparency
-    ESP.MainBox[player].Visible = false
+    -- Create skeleton lines
+    CreateSkeletonLine(player, "Head")
+    CreateSkeletonLine(player, "Torso")
+    CreateSkeletonLine(player, "LeftArm")
+    CreateSkeletonLine(player, "RightArm")
+    CreateSkeletonLine(player, "LeftLeg")
+    CreateSkeletonLine(player, "RightLeg")
     
     -- Tracers
     ESP.Tracers[player] = Drawing.new("Line")
-    ESP.Tracers[player].Thickness = 2
+    ESP.Tracers[player].Thickness = 1
     ESP.Tracers[player].Visible = false
     
-    -- Name Text (top of box)
+    -- Name Text
     ESP.NameText[player] = Drawing.new("Text")
-    ESP.NameText[player].Size = 14
+    ESP.NameText[player].Size = 12
     ESP.NameText[player].Center = true
     ESP.NameText[player].Outline = true
     ESP.NameText[player].Visible = false
     
     -- Health Text
     ESP.HealthText[player] = Drawing.new("Text")
-    ESP.HealthText[player].Size = 12
+    ESP.HealthText[player].Size = 10
     ESP.HealthText[player].Center = true
     ESP.HealthText[player].Outline = true
     ESP.HealthText[player].Visible = false
     
     -- Weapon Text
     ESP.WeaponText[player] = Drawing.new("Text")
-    ESP.WeaponText[player].Size = 11
+    ESP.WeaponText[player].Size = 9
     ESP.WeaponText[player].Center = true
     ESP.WeaponText[player].Outline = true
     ESP.WeaponText[player].Visible = false
     
     -- Distance Text
     ESP.DistanceText[player] = Drawing.new("Text")
-    ESP.DistanceText[player].Size = 11
+    ESP.DistanceText[player].Size = 9
     ESP.DistanceText[player].Center = true
     ESP.DistanceText[player].Outline = true
     ESP.DistanceText[player].Visible = false
@@ -294,7 +351,7 @@ local function CreateESP(player)
     ESP.HealthBarBackground[player] = Drawing.new("Square")
     ESP.HealthBarBackground[player].Thickness = 1
     ESP.HealthBarBackground[player].Filled = true
-    ESP.HealthBarBackground[player].Color = Color3.fromRGB(50, 50, 50)
+    ESP.HealthBarBackground[player].Color = Color3.fromRGB(10, 10, 10)
     ESP.HealthBarBackground[player].Visible = false
     
     -- Health Bar
@@ -304,12 +361,95 @@ local function CreateESP(player)
     ESP.HealthBar[player].Visible = false
 end
 
+-- Update skeleton lines
+local function UpdateSkeleton(player, character, visualColor)
+    if not character then return end
+    
+    local function GetPartPosition(partName)
+        local part = character:FindFirstChild(partName)
+        if part then
+            local pos = Camera:WorldToViewportPoint(part.Position)
+            if pos.Z > 0 then
+                return Vector2.new(pos.X, pos.Y)
+            end
+        end
+        return nil
+    end
+    
+    -- Get all body part positions
+    local headPos = GetPartPosition("Head")
+    local torsoPos = GetPartPosition("UpperTorso") or GetPartPosition("Torso")
+    local leftArmPos = GetPartPosition("LeftUpperArm") or GetPartPosition("Left Arm")
+    local rightArmPos = GetPartPosition("RightUpperArm") or GetPartPosition("Right Arm")
+    local leftLegPos = GetPartPosition("LeftUpperLeg") or GetPartPosition("Left Leg")
+    local rightLegPos = GetPartPosition("RightUpperLeg") or GetPartPosition("Right Leg")
+    
+    if not headPos or not torsoPos then return end
+    
+    -- Head to torso
+    ESP.Head[player].From = headPos
+    ESP.Head[player].To = torsoPos
+    ESP.Head[player].Color = visualColor
+    ESP.Head[player].Visible = true
+    
+    -- Torso center line (spine)
+    ESP.Torso[player].From = torsoPos
+    ESP.Torso[player].To = torsoPos
+    ESP.Torso[player].Visible = false
+    
+    -- Left arm
+    if leftArmPos then
+        ESP.LeftArm[player].From = torsoPos
+        ESP.LeftArm[player].To = leftArmPos
+        ESP.LeftArm[player].Color = visualColor
+        ESP.LeftArm[player].Visible = true
+    else
+        ESP.LeftArm[player].Visible = false
+    end
+    
+    -- Right arm
+    if rightArmPos then
+        ESP.RightArm[player].From = torsoPos
+        ESP.RightArm[player].To = rightArmPos
+        ESP.RightArm[player].Color = visualColor
+        ESP.RightArm[player].Visible = true
+    else
+        ESP.RightArm[player].Visible = false
+    end
+    
+    -- Left leg
+    if leftLegPos then
+        ESP.LeftLeg[player].From = torsoPos
+        ESP.LeftLeg[player].To = leftLegPos
+        ESP.LeftLeg[player].Color = visualColor
+        ESP.LeftLeg[player].Visible = true
+    else
+        ESP.LeftLeg[player].Visible = false
+    end
+    
+    -- Right leg
+    if rightLegPos then
+        ESP.RightLeg[player].From = torsoPos
+        ESP.RightLeg[player].To = rightLegPos
+        ESP.RightLeg[player].Color = visualColor
+        ESP.RightLeg[player].Visible = true
+    else
+        ESP.RightLeg[player].Visible = false
+    end
+end
+
 local function UpdateESP()
-    for player, mainBox in pairs(ESP.MainBox) do
+    for player, _ in pairs(ESP.Tracers) do
         local shouldShowESP = Config.ESPEnabled and not IsTeamIgnored(player)
+        local visualColor = GetVisualColor(player)
         
         if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-            mainBox.Visible = false
+            -- Hide all skeleton lines
+            for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
+                if ESP[partName][player] then
+                    ESP[partName][player].Visible = false
+                end
+            end
             ESP.Tracers[player].Visible = false
             ESP.NameText[player].Visible = false
             ESP.HealthText[player].Visible = false
@@ -325,7 +465,12 @@ local function UpdateESP()
         local humanoid = character:FindFirstChild("Humanoid")
         
         if not humanoid or humanoid.Health <= 0 then
-            mainBox.Visible = false
+            -- Hide all skeleton lines
+            for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
+                if ESP[partName][player] then
+                    ESP[partName][player].Visible = false
+                end
+            end
             ESP.Tracers[player].Visible = false
             ESP.NameText[player].Visible = false
             ESP.HealthText[player].Visible = false
@@ -340,7 +485,12 @@ local function UpdateESP()
         local rootPos = Camera:WorldToViewportPoint(hrp.Position)
         
         if rootPos.Z < 0 then
-            mainBox.Visible = false
+            -- Hide all skeleton lines
+            for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
+                if ESP[partName][player] then
+                    ESP[partName][player].Visible = false
+                end
+            end
             ESP.Tracers[player].Visible = false
             ESP.NameText[player].Visible = false
             ESP.HealthText[player].Visible = false
@@ -351,30 +501,26 @@ local function UpdateESP()
             continue
         end
         
-        -- UNIFIED ESP BOX SYSTEM
-        if Config.UnifiedESPBox and shouldShowESP then
-            local boxWidth = Config.BoxSize
-            local boxHeight = 80 -- Fixed height for all info
-            local boxX = rootPos.X - boxWidth/2
-            local boxY = headPos.Y - 100 -- Position above head
-            
-            -- Main Box
-            mainBox.Size = Vector2.new(boxWidth, boxHeight)
-            mainBox.Position = Vector2.new(boxX, boxY)
-            
-            -- Apply color mode to box
-            if Config.ColorMode == "Rainbow" then
-                mainBox.Color = Color3.fromHSV(rainbowHue, 0.3, 0.3) -- Darker for background
-            else
-                local teamColor = player.Team == lp.Team and Color3.fromRGB(0, 100, 0) or Color3.fromRGB(100, 0, 0)
-                mainBox.Color = teamColor
+        -- Update skeleton ESP if enabled
+        if Config.SkeletonESP and shouldShowESP then
+            UpdateSkeleton(player, character, visualColor)
+        else
+            -- Hide skeleton lines
+            for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
+                if ESP[partName][player] then
+                    ESP[partName][player].Visible = false
+                end
             end
-            mainBox.Visible = true
+        end
+        
+        -- Floating ESP Text
+        if shouldShowESP then
+            local textY = headPos.Y - 50
             
-            -- Name (Top of box)
+            -- Name
             ESP.NameText[player].Text = player.DisplayName
-            ESP.NameText[player].Position = Vector2.new(rootPos.X, boxY + 10)
-            ESP.NameText[player].Color = Color3.fromRGB(255, 255, 255)
+            ESP.NameText[player].Position = Vector2.new(headPos.X, textY)
+            ESP.NameText[player].Color = visualColor
             ESP.NameText[player].Visible = true
             
             -- Health Information
@@ -384,21 +530,21 @@ local function UpdateESP()
                 local healthPercent = math.max(0, health / maxHealth)
                 
                 -- Health Text
-                ESP.HealthText[player].Text = "HP: " .. math.floor(health) .. "/" .. math.floor(maxHealth)
-                ESP.HealthText[player].Position = Vector2.new(rootPos.X, boxY + 25)
+                ESP.HealthText[player].Text = math.floor(health) .. " hp"
+                ESP.HealthText[player].Position = Vector2.new(headPos.X, textY + 15)
                 ESP.HealthText[player].Color = Color3.fromRGB(255, 255, 255)
                 ESP.HealthText[player].Visible = true
                 
                 -- Health Bar Background
-                local barWidth = boxWidth - 20
-                local barHeight = 8
+                local barWidth = 50
+                local barHeight = 4
                 ESP.HealthBarBackground[player].Size = Vector2.new(barWidth, barHeight)
-                ESP.HealthBarBackground[player].Position = Vector2.new(boxX + 10, boxY + 40)
+                ESP.HealthBarBackground[player].Position = Vector2.new(headPos.X - barWidth/2, textY + 30)
                 ESP.HealthBarBackground[player].Visible = true
                 
                 -- Health Bar
                 ESP.HealthBar[player].Size = Vector2.new(barWidth * healthPercent, barHeight)
-                ESP.HealthBar[player].Position = Vector2.new(boxX + 10, boxY + 40)
+                ESP.HealthBar[player].Position = Vector2.new(headPos.X - barWidth/2, textY + 30)
                 ESP.HealthBar[player].Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
                 ESP.HealthBar[player].Visible = true
             else
@@ -410,9 +556,9 @@ local function UpdateESP()
             -- Weapon Information
             if Config.ShowWeapon then
                 local weapon = GetPlayerWeapon(player)
-                ESP.WeaponText[player].Text = "Weapon: " .. weapon
-                ESP.WeaponText[player].Position = Vector2.new(rootPos.X, boxY + 55)
-                ESP.WeaponText[player].Color = Color3.fromRGB(255, 255, 0)
+                ESP.WeaponText[player].Text = weapon
+                ESP.WeaponText[player].Position = Vector2.new(headPos.X, textY + 38)
+                ESP.WeaponText[player].Color = Color3.fromRGB(200, 200, 0)
                 ESP.WeaponText[player].Visible = true
             else
                 ESP.WeaponText[player].Visible = false
@@ -421,15 +567,14 @@ local function UpdateESP()
             -- Distance Information
             if Config.ShowDistance then
                 local distance = lp.Character and (hrp.Position - lp.Character.HumanoidRootPart.Position).Magnitude or 0
-                ESP.DistanceText[player].Text = "Distance: " .. math.floor(distance) .. "m"
-                ESP.DistanceText[player].Position = Vector2.new(rootPos.X, boxY + 70)
-                ESP.DistanceText[player].Color = Color3.fromRGB(200, 200, 200)
+                ESP.DistanceText[player].Text = math.floor(distance) .. "m"
+                ESP.DistanceText[player].Position = Vector2.new(headPos.X, textY + 52)
+                ESP.DistanceText[player].Color = Color3.fromRGB(150, 150, 150)
                 ESP.DistanceText[player].Visible = true
             else
                 ESP.DistanceText[player].Visible = false
             end
         else
-            mainBox.Visible = false
             ESP.NameText[player].Visible = false
             ESP.HealthText[player].Visible = false
             ESP.WeaponText[player].Visible = false
@@ -442,13 +587,7 @@ local function UpdateESP()
         if Config.Tracers and shouldShowESP then
             ESP.Tracers[player].From = Vector2.new(Mouse.X, Mouse.Y)
             ESP.Tracers[player].To = Vector2.new(rootPos.X, rootPos.Y)
-            
-            if Config.ColorMode == "Rainbow" then
-                ESP.Tracers[player].Color = Color3.fromHSV(rainbowHue, 1, 1)
-            else
-                ESP.Tracers[player].Color = player.Team == lp.Team and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 50, 50)
-            end
-            
+            ESP.Tracers[player].Color = visualColor
             ESP.Tracers[player].Visible = true
         else
             ESP.Tracers[player].Visible = false
@@ -457,7 +596,13 @@ local function UpdateESP()
 end
 
 local function RemoveESP(player)
-    if ESP.MainBox[player] then ESP.MainBox[player]:Remove() ESP.MainBox[player] = nil end
+    -- Remove skeleton lines
+    for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
+        if ESP[partName][player] then 
+            ESP[partName][player]:Remove() 
+            ESP[partName][player] = nil 
+        end
+    end
     if ESP.Tracers[player] then ESP.Tracers[player]:Remove() ESP.Tracers[player] = nil end
     if ESP.NameText[player] then ESP.NameText[player]:Remove() ESP.NameText[player] = nil end
     if ESP.HealthText[player] then ESP.HealthText[player]:Remove() ESP.HealthText[player] = nil end
@@ -467,7 +612,7 @@ local function RemoveESP(player)
     if ESP.HealthBarBackground[player] then ESP.HealthBarBackground[player]:Remove() ESP.HealthBarBackground[player] = nil end
 end
 
--- Advanced aimbot tracking with speed control
+-- Advanced aimbot tracking with precision aiming
 local function AdvancedAimAtTarget(target)
     if not target or not target.Character then return end
     
@@ -478,22 +623,23 @@ local function AdvancedAimAtTarget(target)
     local currentCFrame = Camera.CFrame
     local direction = (targetPosition - currentCFrame.Position).Unit
     
+    -- Advanced: Smooth aiming with precision
     local cameraForward = currentCFrame.LookVector
     local angleToTarget = math.acos(cameraForward:Dot(direction))
     
-    local effectiveSmoothing = Config.Smoothing / Config.AimbotSpeed
-    local smoothedDirection = currentCFrame.LookVector:Lerp(direction, effectiveSmoothing)
+    -- Dynamic smoothing based on distance and angle
+    local distance = (targetPosition - currentCFrame.Position).Magnitude
+    local dynamicSmoothing = Config.Smoothing * (1 + (angleToTarget / 180)) / Config.AimbotSpeed
     
-    local screenPos = Camera:WorldToViewportPoint(targetPosition)
-    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    local distFromMouse = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-    
-    if Config.AdvancedTracking and distFromMouse > Config.FOVRadius then
-        local trackingDirection = currentCFrame.LookVector:Lerp(direction, effectiveSmoothing * 0.5)
-        Camera.CFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + trackingDirection)
-    else
-        Camera.CFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + smoothedDirection)
+    -- Precision aiming: smoother for smaller adjustments
+    if angleToTarget < 10 then
+        dynamicSmoothing = dynamicSmoothing * 0.7
     end
+    
+    local smoothedDirection = currentCFrame.LookVector:Lerp(direction, dynamicSmoothing)
+    
+    -- Apply the smoothed aiming
+    Camera.CFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + smoothedDirection)
 end
 
 -- Main loop
@@ -502,45 +648,45 @@ RunService.Heartbeat:Connect(function(deltaTime)
     FOVCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
     FOVCircle.Radius = Config.FOVRadius
     
-    -- Update rainbow colors
-    rainbowHue = (rainbowHue + deltaTime * Config.RainbowSpeed) % 1
-    
-    -- Update FOV circle color with Color Mode
-    if Config.ColorMode == "Rainbow" then
-        if HoldingE and CurrentTarget then
-            FOVCircle.Color = Color3.fromHSV(rainbowHue, 1, 1)
-        else
-            FOVCircle.Color = Color3.fromHSV(rainbowHue, 1, 1)
-        end
+    -- FOV Color changes based on color mode and target
+    if CurrentTarget then
+        FOVCircle.Color = GetVisualColor(CurrentTarget)
     else
-        if HoldingE and CurrentTarget then
-            FOVCircle.Color = Color3.fromRGB(0, 255, 0)
-        else
-            FOVCircle.Color = Config.StaticColor
-        end
+        FOVCircle.Color = Config.ColorMode == "full" and Config.FullColor or Color3.fromRGB(255, 255, 255)
     end
     
     -- Update ESP
     UpdateESP()
     
-    -- Advanced aimbot logic when holding E (only if aimbot is enabled)
-    if HoldingE and Config.AimbotEnabled then
+    -- Advanced aimbot logic when holding LMB (only if aimbot is enabled)
+    if HoldingLMB and Config.AimbotEnabled then
         local target = GetBestTarget()
         
         if target and target ~= CurrentTarget then
             CurrentTarget = target
-            ShowNotification("Target Locked", "Tracking: " .. target.DisplayName)
+            TargetLocked = true
+            ShowNotification("target locked", "tracking: " .. target.DisplayName)
         end
         
-        if CurrentTarget then
-            AdvancedAimAtTarget(CurrentTarget)
-            PerformAutoShoot()
+        -- Advanced: Check if current target is still valid
+        if CurrentTarget and CurrentTarget.Character then
+            local humanoid = CurrentTarget.Character:FindFirstChild("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then
+                CurrentTarget = nil
+                TargetLocked = false
+                ShowNotification("target eliminated", "searching for new target...")
+            else
+                AdvancedAimAtTarget(CurrentTarget)
+                PerformAutoShoot()
+            end
         else
             AutoShooting = false
+            TargetLocked = false
         end
     else
         if CurrentTarget then
             CurrentTarget = nil
+            TargetLocked = false
         end
         AutoShooting = false
     end
@@ -550,23 +696,24 @@ end)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
-    if input.KeyCode == Config.HoldKey and Config.AimbotEnabled then
-        HoldingE = true
-        ShowNotification("Aimbot Active", "Hold E to track targets")
+    if input.UserInputType == Config.HoldKey and Config.AimbotEnabled then
+        HoldingLMB = true
+        ShowNotification("aimbot active", "hold LMB to track targets")
     end
     
     if input.KeyCode == Enum.KeyCode.Insert then
         FOVCircle.Visible = not FOVCircle.Visible
-        ShowNotification("FOV Circle", FOVCircle.Visible and "Visible" or "Hidden")
+        ShowNotification("fov circle", FOVCircle.Visible and "visible" or "hidden")
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Config.HoldKey then
-        HoldingE = false
+    if input.UserInputType == Config.HoldKey then
+        HoldingLMB = false
         AutoShooting = false
+        TargetLocked = false
         if CurrentTarget then
-            ShowNotification("Aimbot Inactive", "Released E key")
+            ShowNotification("aimbot inactive", "released LMB")
         end
     end
 end)
@@ -583,6 +730,7 @@ Players.PlayerRemoving:Connect(function(player)
     RemoveESP(player)
     if CurrentTarget == player then
         CurrentTarget = nil
+        TargetLocked = false
     end
 end)
 
@@ -594,61 +742,65 @@ for _, player in Players:GetPlayers() do
 end
 
 -- ENHANCED GUI FOR UNIFIED ESP BOX
--- Main Tab (same as before)
-MainTab:CreateSection("Aimbot Configuration")
-MainTab:CreateToggle({Name = "Aimbot Enabled", CurrentValue = true, Callback = function(v) Config.AimbotEnabled = v; ShowNotification("Aimbot", v and "ENABLED" or "DISABLED") end})
-MainTab:CreateToggle({Name = "Aimbot FOV", CurrentValue = true, Callback = function(v) Config.AimbotFOV = v; ShowNotification("Aimbot FOV", v and "ENABLED" or "DISABLED") end})
-MainTab:CreateToggle({Name = "Advanced Tracking", CurrentValue = true, Callback = function(v) Config.AdvancedTracking = v; ShowNotification("Advanced Tracking", v and "ENABLED" or "DISABLED") end})
-MainTab:CreateToggle({Name = "Prediction", CurrentValue = true, Callback = function(v) Config.Prediction = v; ShowNotification("Prediction", v and "ENABLED" or "DISABLED") end})
-MainTab:CreateToggle({Name = "Auto Shoot", CurrentValue = true, Callback = function(v) Config.AutoShoot = v; ShowNotification("Auto Shoot", v and "ENABLED" or "DISABLED") end})
-MainTab:CreateToggle({Name = "Team Check", CurrentValue = true, Callback = function(v) Config.TeamCheck = v; ShowNotification("Team Check", v and "ENABLED" or "DISABLED") end})
+-- Main Tab
+MainTab:CreateSection("aimbot configuration")
+MainTab:CreateToggle({Name = "aimbot enabled", CurrentValue = false, Callback = function(v) Config.AimbotEnabled = v; ShowNotification("aimbot", v and "enabled" or "disabled") end})
+MainTab:CreateToggle({Name = "aimbot fov", CurrentValue = false, Callback = function(v) Config.AimbotFOV = v; ShowNotification("aimbot fov", v and "enabled" or "disabled") end})
+MainTab:CreateToggle({Name = "advanced tracking", CurrentValue = true, Callback = function(v) Config.AdvancedTracking = v; ShowNotification("advanced tracking", v and "enabled" or "disabled") end})
+MainTab:CreateToggle({Name = "prediction", CurrentValue = true, Callback = function(v) Config.Prediction = v; ShowNotification("prediction", v and "enabled" or "disabled") end})
+MainTab:CreateToggle({Name = "auto shoot", CurrentValue = false, Callback = function(v) Config.AutoShoot = v; ShowNotification("auto shoot", v and "enabled" or "disabled") end})
+MainTab:CreateToggle({Name = "team check", CurrentValue = false, Callback = function(v) Config.TeamCheck = v; ShowNotification("team check", v and "enabled" or "disabled") end})
 
-MainTab:CreateSection("Aimbot Settings")
-MainTab:CreateSlider({Name = "FOV Radius", Range = {50, 300}, Increment = 10, CurrentValue = 150, Callback = function(v) Config.FOVRadius = v end})
-MainTab:CreateSlider({Name = "Aimbot Speed", Range = {0.1, 5.0}, Increment = 0.1, CurrentValue = 1.0, Callback = function(v) Config.AimbotSpeed = v end})
-MainTab:CreateSlider({Name = "Smoothing", Range = {0.01, 0.5}, Increment = 0.01, CurrentValue = 0.08, Callback = function(v) Config.Smoothing = v end})
-MainTab:CreateSlider({Name = "Max Tracking Angle", Range = {30, 180}, Increment = 5, CurrentValue = 120, Callback = function(v) Config.MaxTrackingAngle = v end})
-MainTab:CreateSlider({Name = "Prediction Strength", Range = {0.5, 2.5}, Increment = 0.1, CurrentValue = 1.15, Callback = function(v) Config.PredictionStrength = v end})
-MainTab:CreateSlider({Name = "Shoot Delay", Range = {0.05, 0.5}, Increment = 0.01, CurrentValue = 0.12, Callback = function(v) Config.ShootDelay = v end})
-MainTab:CreateDropdown({Name = "Target Part", Options = {"Head", "UpperTorso", "HumanoidRootPart", "LowerTorso"}, CurrentOption = "Head", Callback = function(v) Config.TargetPart = v end})
+MainTab:CreateSection("aimbot settings")
+MainTab:CreateSlider({Name = "fov radius", Range = {50, 300}, Increment = 10, CurrentValue = 150, Callback = function(v) Config.FOVRadius = v end})
+MainTab:CreateSlider({Name = "aimbot speed", Range = {0.1, 5.0}, Increment = 0.1, CurrentValue = 1.2, Callback = function(v) Config.AimbotSpeed = v end})
+MainTab:CreateSlider({Name = "smoothing", Range = {0.01, 0.5}, Increment = 0.01, CurrentValue = 0.05, Callback = function(v) Config.Smoothing = v end})
+MainTab:CreateSlider({Name = "max tracking angle", Range = {30, 180}, Increment = 5, CurrentValue = 90, Callback = function(v) Config.MaxTrackingAngle = v end})
+MainTab:CreateSlider({Name = "prediction strength", Range = {0.5, 2.5}, Increment = 0.1, CurrentValue = 1.25, Callback = function(v) Config.PredictionStrength = v end})
+MainTab:CreateSlider({Name = "shoot delay", Range = {0.05, 0.5}, Increment = 0.01, CurrentValue = 0.1, Callback = function(v) Config.ShootDelay = v end})
+MainTab:CreateSlider({Name = "hit chance", Range = {50, 100}, Increment = 1, CurrentValue = 95, Callback = function(v) Config.HitChance = v end})
+MainTab:CreateDropdown({Name = "target part", Options = {"Head", "UpperTorso", "HumanoidRootPart", "LowerTorso"}, CurrentOption = "Head", Callback = function(v) Config.TargetPart = v end})
 
 -- Visual Tab
-VisualTab:CreateSection("Color System")
-VisualTab:CreateDropdown({Name = "Color Mode", Options = {"Rainbow", "Static"}, CurrentOption = "Rainbow", Callback = function(v) Config.ColorMode = v; ShowNotification("Color Mode", v) end})
-VisualTab:CreateColorPicker({Name = "Static Color", Color = Config.StaticColor, Callback = function(v) Config.StaticColor = v; if Config.ColorMode == "Static" then FOVCircle.Color = v end end})
-VisualTab:CreateSlider({Name = "Rainbow Speed", Range = {1, 20}, Increment = 1, CurrentValue = 5, Callback = function(v) Config.RainbowSpeed = v end})
+VisualTab:CreateSection("color settings")
+VisualTab:CreateDropdown({Name = "color mode", Options = {"team", "full"}, CurrentOption = "team", Callback = function(v) 
+    Config.ColorMode = v
+    ShowNotification("color mode", v)
+end})
+VisualTab:CreateColorPicker({Name = "full color", Color = Config.FullColor, Callback = function(v) 
+    Config.FullColor = v
+    if Config.ColorMode == "full" then
+        FOVCircle.Color = v
+    end
+end})
 
-VisualTab:CreateSection("Visual Settings")
-VisualTab:CreateToggle({Name = "FOV Circle Visible", CurrentValue = true, Callback = function(v) FOVCircle.Visible = v; ShowNotification("FOV Circle", v and "Visible" or "Hidden") end})
+VisualTab:CreateSection("visual settings")
+VisualTab:CreateToggle({Name = "fov circle visible", CurrentValue = false, Callback = function(v) FOVCircle.Visible = v; ShowNotification("fov circle", v and "visible" or "hidden") end})
+VisualTab:CreateToggle({Name = "skeleton esp", CurrentValue = false, Callback = function(v) Config.SkeletonESP = v; ShowNotification("skeleton esp", v and "enabled" or "disabled") end})
 
-VisualTab:CreateSection("Unified ESP Box System")
-VisualTab:CreateToggle({Name = "ESP Enabled", CurrentValue = true, Callback = function(v) Config.ESPEnabled = v; ShowNotification("ESP", v and "ENABLED" or "DISABLED") end})
-VisualTab:CreateToggle({Name = "Unified ESP Box", CurrentValue = true, Callback = function(v) Config.UnifiedESPBox = v; ShowNotification("Unified Box", v and "ENABLED" or "DISABLED") end})
-VisualTab:CreateToggle({Name = "Tracers", CurrentValue = true, Callback = function(v) Config.Tracers = v; ShowNotification("Tracers", v and "ENABLED" or "DISABLED") end})
-VisualTab:CreateToggle({Name = "Show Health Bar", CurrentValue = true, Callback = function(v) Config.ShowHealthBar = v; ShowNotification("Health Bar", v and "ENABLED" or "DISABLED") end})
-VisualTab:CreateToggle({Name = "Show Weapon", CurrentValue = true, Callback = function(v) Config.ShowWeapon = v; ShowNotification("Weapon ESP", v and "ENABLED" or "DISABLED") end})
-VisualTab:CreateToggle({Name = "Show Distance", CurrentValue = true, Callback = function(v) Config.ShowDistance = v; ShowNotification("Distance", v and "ENABLED" or "DISABLED") end})
-
-VisualTab:CreateSection("Box Settings")
-VisualTab:CreateSlider({Name = "Box Transparency", Range = {0.1, 0.9}, Increment = 0.1, CurrentValue = 0.7, Callback = function(v) Config.BoxTransparency = v end})
-VisualTab:CreateSlider({Name = "Box Width", Range = {80, 200}, Increment = 10, CurrentValue = 120, Callback = function(v) Config.BoxSize = v end})
+VisualTab:CreateSection("esp system")
+VisualTab:CreateToggle({Name = "esp enabled", CurrentValue = false, Callback = function(v) Config.ESPEnabled = v; ShowNotification("esp", v and "enabled" or "disabled") end})
+VisualTab:CreateToggle({Name = "tracers", CurrentValue = false, Callback = function(v) Config.Tracers = v; ShowNotification("tracers", v and "enabled" or "disabled") end})
+VisualTab:CreateToggle({Name = "show health bar", CurrentValue = false, Callback = function(v) Config.ShowHealthBar = v; ShowNotification("health bar", v and "enabled" or "disabled") end})
+VisualTab:CreateToggle({Name = "show weapon", CurrentValue = false, Callback = function(v) Config.ShowWeapon = v; ShowNotification("weapon esp", v and "enabled" or "disabled") end})
+VisualTab:CreateToggle({Name = "show distance", CurrentValue = false, Callback = function(v) Config.ShowDistance = v; ShowNotification("distance", v and "enabled" or "disabled") end})
 
 -- Settings Tab
-SettingsTab:CreateSection("Team Management")
+SettingsTab:CreateSection("team management")
 local teams = GetTeams()
 for _, teamName in pairs(teams) do
     SettingsTab:CreateToggle({
-        Name = "Ignore " .. teamName,
+        Name = "ignore " .. teamName,
         CurrentValue = false,
         Callback = function(v)
             if v then
                 table.insert(Config.IgnoredTeams, teamName)
-                ShowNotification("Team Ignored", "Ignoring: " .. teamName)
+                ShowNotification("team ignored", "ignoring: " .. teamName)
             else
                 for i, name in pairs(Config.IgnoredTeams) do
                     if name == teamName then
                         table.remove(Config.IgnoredTeams, i)
-                        ShowNotification("Team Removed", "No longer ignoring: " .. teamName)
+                        ShowNotification("team removed", "no longer ignoring: " .. teamName)
                         break
                     end
                 end
@@ -657,12 +809,12 @@ for _, teamName in pairs(teams) do
     })
 end
 
-SettingsTab:CreateSection("Information")
+SettingsTab:CreateSection("information")
 SettingsTab:CreateParagraph({
-    Title = "Unified ESP Box",
-    Content = "All player information organized in one clean box:\n• Name at top\n• Health bar with text\n• Current weapon\n• Distance to player\n• Transparent background for visibility"
+    Title = "ultimate esp aimbot",
+    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• full color mode customization\n• advanced target locking\n• center mouse fov targeting"
 })
 
-ShowNotification("Unified ESP Loaded", "All player info in one organized box!")
+ShowNotification("ultimate esp aimbot loaded", "hold LMB to activate aimbot")
 
-print("Prison Life Unified ESP Aimbot - All-in-One Box Edition Loaded")
+print("prison life ultimate esp aimbot - skeleton edition loaded")
