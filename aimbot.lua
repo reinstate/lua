@@ -49,6 +49,7 @@ local Config = {
     -- Color System
     TeamColorMode = true,
     FunMode = false, -- Rainbow mode!
+    RainbowSpeed = 0.5, -- New: Speed of rainbow color cycling (0.1 = slow, 2.0 = fast)
     
     -- ESP
     ESPEnabled = false,
@@ -62,10 +63,10 @@ local Config = {
     AimbotFOV = false
 }
 
--- Rainbow color generator
+-- Rainbow color generator with speed control
 local rainbowOffset = 0
 local function GetRainbowColor()
-    rainbowOffset = (rainbowOffset + 0.01) % 1
+    rainbowOffset = (rainbowOffset + (0.01 * Config.RainbowSpeed)) % 1
     return Color3.fromHSV(rainbowOffset, 1, 1)
 end
 
@@ -790,6 +791,17 @@ VisualTab:CreateSection("visual settings")
 VisualTab:CreateToggle({Name = "fov circle visible", CurrentValue = false, Callback = function(v) FOVCircle.Visible = v; ShowNotification("fov circle", v and "visible" or "hidden") end})
 VisualTab:CreateToggle({Name = "skeleton esp", CurrentValue = false, Callback = function(v) Config.SkeletonESP = v; ShowNotification("skeleton esp", v and "enabled" or "disabled") end})
 
+-- NEW: Rainbow Speed Settings
+VisualTab:CreateSection("rainbow settings")
+VisualTab:CreateSlider({Name = "rainbow speed", Range = {0.1, 2.0}, Increment = 0.1, CurrentValue = 0.5, Callback = function(v) 
+    Config.RainbowSpeed = v
+    ShowNotification("rainbow speed", "set to " .. tostring(v))
+end})
+VisualTab:CreateParagraph({
+    Title = "rainbow speed info",
+    Content = "• 0.1 = slow, calm colors\n• 0.5 = medium, balanced\n• 1.0 = fast, vibrant\n• 2.0 = extremely fast, seizure warning!"
+})
+
 VisualTab:CreateSection("esp system")
 VisualTab:CreateToggle({Name = "esp enabled", CurrentValue = false, Callback = function(v) Config.ESPEnabled = v; ShowNotification("esp", v and "enabled" or "disabled") end})
 VisualTab:CreateToggle({Name = "tracers", CurrentValue = false, Callback = function(v) Config.Tracers = v; ShowNotification("tracers", v and "enabled" or "disabled") end})
@@ -797,7 +809,7 @@ VisualTab:CreateToggle({Name = "show health bar", CurrentValue = false, Callback
 VisualTab:CreateToggle({Name = "show weapon", CurrentValue = false, Callback = function(v) Config.ShowWeapon = v; ShowNotification("weapon esp", v and "enabled" or "disabled") end})
 VisualTab:CreateToggle({Name = "show distance", CurrentValue = false, Callback = function(v) Config.ShowDistance = v; ShowNotification("distance", v and "enabled" or "disabled") end})
 
--- Settings Tab - TEAM MANAGEMENT RESTORED!
+-- Settings Tab - TEAM MANAGEMENT
 SettingsTab:CreateSection("team management")
 SettingsTab:CreateParagraph({
     Title = "team ignore settings",
@@ -830,7 +842,7 @@ end
 SettingsTab:CreateSection("information")
 SettingsTab:CreateParagraph({
     Title = "ultimate esp aimbot",
-    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• 🌈 FUN MODE - EVERYTHING RAINBOW! 🌈\n• advanced target locking\n• center mouse fov targeting\n• team management system"
+    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• 🌈 FUN MODE with adjustable speed! 🌈\n• advanced target locking\n• center mouse fov targeting\n• team management system"
 })
 
 SettingsTab:CreateSection("controls")
