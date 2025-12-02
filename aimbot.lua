@@ -47,8 +47,8 @@ local Config = {
     IgnoredTeams = {},
     
     -- Color System
-    ColorMode = "team", -- team, full
-    FullColor = Color3.fromRGB(255, 50, 50),
+    TeamColorMode = true,
+    FunMode = false, -- Rainbow mode!
     
     -- ESP
     ESPEnabled = false,
@@ -56,11 +56,18 @@ local Config = {
     ShowHealthBar = false,
     ShowWeapon = false,
     ShowDistance = false,
-    SkeletonESP = false, -- New: Skeleton highlight
+    SkeletonESP = false,
     
     -- Aimbot FOV
     AimbotFOV = false
 }
+
+-- Rainbow color generator
+local rainbowOffset = 0
+local function GetRainbowColor()
+    rainbowOffset = (rainbowOffset + 0.01) % 1
+    return Color3.fromHSV(rainbowOffset, 1, 1)
+end
 
 -- FOV Circle (centered to mouse)
 local FOVCircle = Drawing.new("Circle")
@@ -69,7 +76,7 @@ FOVCircle.NumSides = 64
 FOVCircle.Radius = Config.FOVRadius
 FOVCircle.Filled = false
 FOVCircle.Transparency = 0.9
-FOVCircle.Color = Config.FullColor
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
 FOVCircle.Visible = false
 
 -- ESP Storage
@@ -92,7 +99,7 @@ local ESP = {
 
 -- Global variables
 local CurrentTarget = nil
-local Holding = false -- LMB
+local HoldingLMB = false
 local LastShot = 0
 local AutoShooting = false
 local TargetLocked = false
@@ -175,10 +182,12 @@ end
 
 -- Get visual color based on color mode
 local function GetVisualColor(player)
-    if Config.ColorMode == "full" then
-        return Config.FullColor
-    else
+    if Config.FunMode then
+        return GetRainbowColor()
+    elseif Config.TeamColorMode then
         return GetTeamColor(player)
+    else
+        return Color3.fromRGB(255, 50, 50) -- Default red
     end
 end
 
@@ -532,7 +541,7 @@ local function UpdateESP()
                 -- Health Text
                 ESP.HealthText[player].Text = math.floor(health) .. " hp"
                 ESP.HealthText[player].Position = Vector2.new(headPos.X, textY + 15)
-                ESP.HealthText[player].Color = Color3.fromRGB(255, 255, 255)
+                ESP.HealthText[player].Color = Config.FunMode and GetRainbowColor() or Color3.fromRGB(255, 255, 255)
                 ESP.HealthText[player].Visible = true
                 
                 -- Health Bar Background
@@ -545,7 +554,7 @@ local function UpdateESP()
                 -- Health Bar
                 ESP.HealthBar[player].Size = Vector2.new(barWidth * healthPercent, barHeight)
                 ESP.HealthBar[player].Position = Vector2.new(headPos.X - barWidth/2, textY + 30)
-                ESP.HealthBar[player].Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
+                ESP.HealthBar[player].Color = Config.FunMode and GetRainbowColor() or Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
                 ESP.HealthBar[player].Visible = true
             else
                 ESP.HealthText[player].Visible = false
@@ -558,7 +567,7 @@ local function UpdateESP()
                 local weapon = GetPlayerWeapon(player)
                 ESP.WeaponText[player].Text = weapon
                 ESP.WeaponText[player].Position = Vector2.new(headPos.X, textY + 38)
-                ESP.WeaponText[player].Color = Color3.fromRGB(200, 200, 0)
+                ESP.WeaponText[player].Color = Config.FunMode and GetRainbowColor() or Color3.fromRGB(200, 200, 0)
                 ESP.WeaponText[player].Visible = true
             else
                 ESP.WeaponText[player].Visible = false
@@ -569,7 +578,7 @@ local function UpdateESP()
                 local distance = lp.Character and (hrp.Position - lp.Character.HumanoidRootPart.Position).Magnitude or 0
                 ESP.DistanceText[player].Text = math.floor(distance) .. "m"
                 ESP.DistanceText[player].Position = Vector2.new(headPos.X, textY + 52)
-                ESP.DistanceText[player].Color = Color3.fromRGB(150, 150, 150)
+                ESP.DistanceText[player].Color = Config.FunMode and GetRainbowColor() or Color3.fromRGB(150, 150, 150)
                 ESP.DistanceText[player].Visible = true
             else
                 ESP.DistanceText[player].Visible = false
@@ -649,10 +658,12 @@ RunService.Heartbeat:Connect(function(deltaTime)
     FOVCircle.Radius = Config.FOVRadius
     
     -- FOV Color changes based on color mode and target
-    if CurrentTarget then
+    if Config.FunMode then
+        FOVCircle.Color = GetRainbowColor()
+    elseif CurrentTarget then
         FOVCircle.Color = GetVisualColor(CurrentTarget)
     else
-        FOVCircle.Color = Config.ColorMode == "full" and Config.FullColor or Color3.fromRGB(255, 255, 255)
+        FOVCircle.Color = Config.TeamColorMode and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 50, 50)
     end
     
     -- Update ESP
@@ -763,14 +774,15 @@ MainTab:CreateDropdown({Name = "target part", Options = {"Head", "UpperTorso", "
 
 -- Visual Tab
 VisualTab:CreateSection("color settings")
-VisualTab:CreateDropdown({Name = "color mode", Options = {"team", "full"}, CurrentOption = "team", Callback = function(v) 
-    Config.ColorMode = v
-    ShowNotification("color mode", v)
+VisualTab:CreateToggle({Name = "team colors", CurrentValue = true, Callback = function(v) 
+    Config.TeamColorMode = v
+    ShowNotification("team colors", v and "enabled" or "disabled")
 end})
-VisualTab:CreateColorPicker({Name = "full color", Color = Config.FullColor, Callback = function(v) 
-    Config.FullColor = v
-    if Config.ColorMode == "full" then
-        FOVCircle.Color = v
+VisualTab:CreateToggle({Name = "🌈 FUN MODE 🌈", CurrentValue = false, Callback = function(v) 
+    Config.FunMode = v
+    ShowNotification("FUN MODE", v and "RAINBOW EVERYTHING! 🌈" or "disabled")
+    if v then
+        ShowNotification("WARNING", "Epilepsy warning: Flashing colors!")
     end
 end})
 
@@ -812,9 +824,9 @@ end
 SettingsTab:CreateSection("information")
 SettingsTab:CreateParagraph({
     Title = "ultimate esp aimbot",
-    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• full color mode customization\n• advanced target locking\n• center mouse fov targeting"
+    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• 🌈 FUN MODE - EVERYTHING RAINBOW! 🌈\n• advanced target locking\n• center mouse fov targeting"
 })
 
-ShowNotification("ultimate esp aimbot loaded", "hold LMB to activate aimbot")
+ShowNotification("ultimate esp aimbot loaded", "hold LMB to activate aimbot | try FUN MODE! 🌈")
 
-print("prison life ultimate esp aimbot - skeleton edition loaded")
+print("prison life ultimate esp aimbot - skeleton edition with FUN MODE loaded!")
