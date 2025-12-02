@@ -21,7 +21,6 @@ local Window = Rayfield:CreateWindow({
 local MainTab = Window:CreateTab("aimbot")
 local VisualTab = Window:CreateTab("visuals")
 local SettingsTab = Window:CreateTab("settings")
-local ConfigTab = Window:CreateTab("configurations") -- New Configuration Tab
 
 -- Enhanced Config
 local Config = {
@@ -63,180 +62,6 @@ local Config = {
     AimbotFOV = false
 }
 
--- Configuration Management System
-local ConfigManager = {
-    CurrentProfile = "Default",
-    Profiles = {},
-    ConfigFolder = "PLUnifiedESP_Profiles",
-    
-    -- Initialize
-    Init = function(self)
-        -- Create folder if it doesn't exist
-        if not isfolder(self.ConfigFolder) then
-            makefolder(self.ConfigFolder)
-        end
-        
-        -- Load existing profiles
-        self:LoadProfileList()
-    end,
-    
-    -- Save current configuration to file
-    SaveConfig = function(self, profileName)
-        if not profileName or profileName == "" then
-            profileName = "Unnamed_Config_" .. os.time()
-        end
-        
-        -- Prepare config data
-        local configData = {
-            Config = Config,
-            Timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-            ProfileName = profileName
-        }
-        
-        -- Convert Color3 to table for serialization
-        configData.Config.FullColor = {
-            R = Config.FullColor.R,
-            G = Config.FullColor.G,
-            B = Config.FullColor.B
-        }
-        
-        -- Save to file
-        local success, message = pcall(function()
-            writefile(self.ConfigFolder .. "/" .. profileName .. ".json", game:GetService("HttpService"):JSONEncode(configData))
-        end)
-        
-        if success then
-            ShowNotification("Configuration Saved", "Saved as: " .. profileName)
-            self:LoadProfileList() -- Refresh list
-            return true
-        else
-            ShowNotification("Save Error", "Failed to save: " .. tostring(message))
-            return false
-        end
-    end,
-    
-    -- Load configuration from file
-    LoadConfig = function(self, profileName)
-        local filePath = self.ConfigFolder .. "/" .. profileName .. ".json"
-        
-        if not isfile(filePath) then
-            ShowNotification("Load Error", "Configuration not found: " .. profileName)
-            return false
-        end
-        
-        local success, data = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(readfile(filePath))
-        end)
-        
-        if not success or not data then
-            ShowNotification("Load Error", "Failed to load configuration")
-            return false
-        end
-        
-        -- Update current config with loaded data
-        for key, value in pairs(data.Config) do
-            if key == "FullColor" and type(value) == "table" then
-                Config[key] = Color3.new(value.R, value.G, value.B)
-            elseif key == "IgnoredTeams" then
-                Config[key] = value or {}
-            else
-                Config[key] = value
-            end
-        end
-        
-        -- Update UI elements to reflect loaded config
-        self:UpdateUIFromConfig()
-        
-        self.CurrentProfile = profileName
-        ShowNotification("Configuration Loaded", "Loaded: " .. profileName .. "\n" .. data.Timestamp)
-        return true
-    end,
-    
-    -- Delete a configuration
-    DeleteConfig = function(self, profileName)
-        local filePath = self.ConfigFolder .. "/" .. profileName .. ".json"
-        
-        if isfile(filePath) then
-            delfile(filePath)
-            ShowNotification("Configuration Deleted", "Deleted: " .. profileName)
-            self:LoadProfileList() -- Refresh list
-            return true
-        else
-            ShowNotification("Delete Error", "Configuration not found")
-            return false
-        end
-    end,
-    
-    -- List all saved profiles
-    LoadProfileList = function(self)
-        self.Profiles = {}
-        
-        if not isfolder(self.ConfigFolder) then
-            makefolder(self.ConfigFolder)
-            return
-        end
-        
-        local files = listfiles(self.ConfigFolder)
-        for _, filePath in ipairs(files) do
-            local fileName = filePath:match("[^\\/]+$")
-            if fileName:match("%.json$") then
-                local profileName = fileName:gsub("%.json$", "")
-                table.insert(self.Profiles, profileName)
-            end
-        end
-        
-        table.sort(self.Profiles)
-    end,
-    
-    -- Export config as string (for sharing)
-    ExportConfig = function(self, profileName)
-        local filePath = self.ConfigFolder .. "/" .. profileName .. ".json"
-        
-        if not isfile(filePath) then
-            return nil
-        end
-        
-        return readfile(filePath)
-    end,
-    
-    -- Import config from string
-    ImportConfig = function(self, configString, profileName)
-        local success, data = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(configString)
-        end)
-        
-        if not success then
-            ShowNotification("Import Error", "Invalid configuration format")
-            return false
-        end
-        
-        -- Save imported config
-        local configData = {
-            Config = data.Config or data,
-            Timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-            ProfileName = profileName or "Imported_" .. os.time()
-        }
-        
-        writefile(self.ConfigFolder .. "/" .. configData.ProfileName .. ".json", 
-                 game:GetService("HttpService"):JSONEncode(configData))
-        
-        ShowNotification("Configuration Imported", "Saved as: " .. configData.ProfileName)
-        self:LoadProfileList()
-        return true
-    end,
-    
-    -- Update all UI elements to match current config
-    UpdateUIFromConfig = function(self)
-        -- This function should be called after loading a config to update UI toggles/sliders
-        -- Note: In actual implementation, you would need to store references to UI elements
-        -- and update them. For now, we'll show a notification.
-        ShowNotification("UI Updated", "All settings applied from loaded configuration")
-    end
-}
-
--- Initialize Config Manager
-ConfigManager:Init()
-
 -- FOV Circle (centered to mouse)
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 1
@@ -267,7 +92,7 @@ local ESP = {
 
 -- Global variables
 local CurrentTarget = nil
-local HoldingLMB = false
+local Holding = false -- LMB
 local LastShot = 0
 local AutoShooting = false
 local TargetLocked = false
@@ -366,6 +191,7 @@ end
 
 -- Advanced target finding with FOV and angle tracking
 local function GetBestTarget()
+    -- Advanced: If we have a locked target that's still alive, stick with them
     if TargetLocked and CurrentTarget and CurrentTarget.Character then
         local humanoid = CurrentTarget.Character:FindFirstChild("Humanoid")
         if humanoid and humanoid.Health > 0 then
@@ -394,6 +220,7 @@ local function GetBestTarget()
         if onScreen then
             local score = 0
             
+            -- Advanced: Calculate distance from mouse center with FOV priority
             local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
             local cameraForward = Camera.CFrame.LookVector
             local toTarget = (predictedPos - Camera.CFrame.Position).Unit
@@ -401,6 +228,7 @@ local function GetBestTarget()
             
             if Config.AimbotFOV then
                 if dist <= Config.FOVRadius then
+                    -- Higher score for targets closer to mouse center
                     score = score + ((Config.FOVRadius - dist) * 2)
                 else
                     if Config.AdvancedTracking and angle <= Config.MaxTrackingAngle then
@@ -417,13 +245,16 @@ local function GetBestTarget()
                 end
             end
             
+            -- Advanced: Prioritize closer targets and head visibility
             local distance3D = (hrp.Position - Camera.CFrame.Position).Magnitude
-            score = score + (1500 / distance3D)
+            score = score + (1500 / distance3D) -- Increased priority for closer targets
             
+            -- Bonus for head shots
             if Config.TargetPart == "Head" then
                 score = score + 50
             end
             
+            -- Bonus for stationary targets
             local velocity = hrp.AssemblyLinearVelocity or hrp.Velocity or Vector3.new(0, 0, 0)
             if velocity.Magnitude < 2 then
                 score = score + 30
@@ -446,6 +277,7 @@ local function PerformAutoShoot()
     end
     
     if tick() - LastShot >= Config.ShootDelay then
+        -- Advanced: Apply hit chance
         if not ShouldHit(CurrentTarget) then
             return
         end
@@ -474,6 +306,7 @@ end
 local function CreateESP(player)
     if player == lp or ESP.Tracers[player] then return end
     
+    -- Create skeleton lines
     CreateSkeletonLine(player, "Head")
     CreateSkeletonLine(player, "Torso")
     CreateSkeletonLine(player, "LeftArm")
@@ -481,40 +314,47 @@ local function CreateESP(player)
     CreateSkeletonLine(player, "LeftLeg")
     CreateSkeletonLine(player, "RightLeg")
     
+    -- Tracers
     ESP.Tracers[player] = Drawing.new("Line")
     ESP.Tracers[player].Thickness = 1
     ESP.Tracers[player].Visible = false
     
+    -- Name Text
     ESP.NameText[player] = Drawing.new("Text")
     ESP.NameText[player].Size = 12
     ESP.NameText[player].Center = true
     ESP.NameText[player].Outline = true
     ESP.NameText[player].Visible = false
     
+    -- Health Text
     ESP.HealthText[player] = Drawing.new("Text")
     ESP.HealthText[player].Size = 10
     ESP.HealthText[player].Center = true
     ESP.HealthText[player].Outline = true
     ESP.HealthText[player].Visible = false
     
+    -- Weapon Text
     ESP.WeaponText[player] = Drawing.new("Text")
     ESP.WeaponText[player].Size = 9
     ESP.WeaponText[player].Center = true
     ESP.WeaponText[player].Outline = true
     ESP.WeaponText[player].Visible = false
     
+    -- Distance Text
     ESP.DistanceText[player] = Drawing.new("Text")
     ESP.DistanceText[player].Size = 9
     ESP.DistanceText[player].Center = true
     ESP.DistanceText[player].Outline = true
     ESP.DistanceText[player].Visible = false
     
+    -- Health Bar Background
     ESP.HealthBarBackground[player] = Drawing.new("Square")
     ESP.HealthBarBackground[player].Thickness = 1
     ESP.HealthBarBackground[player].Filled = true
     ESP.HealthBarBackground[player].Color = Color3.fromRGB(10, 10, 10)
     ESP.HealthBarBackground[player].Visible = false
     
+    -- Health Bar
     ESP.HealthBar[player] = Drawing.new("Square")
     ESP.HealthBar[player].Thickness = 1
     ESP.HealthBar[player].Filled = true
@@ -536,6 +376,7 @@ local function UpdateSkeleton(player, character, visualColor)
         return nil
     end
     
+    -- Get all body part positions
     local headPos = GetPartPosition("Head")
     local torsoPos = GetPartPosition("UpperTorso") or GetPartPosition("Torso")
     local leftArmPos = GetPartPosition("LeftUpperArm") or GetPartPosition("Left Arm")
@@ -545,15 +386,18 @@ local function UpdateSkeleton(player, character, visualColor)
     
     if not headPos or not torsoPos then return end
     
+    -- Head to torso
     ESP.Head[player].From = headPos
     ESP.Head[player].To = torsoPos
     ESP.Head[player].Color = visualColor
     ESP.Head[player].Visible = true
     
+    -- Torso center line (spine)
     ESP.Torso[player].From = torsoPos
     ESP.Torso[player].To = torsoPos
     ESP.Torso[player].Visible = false
     
+    -- Left arm
     if leftArmPos then
         ESP.LeftArm[player].From = torsoPos
         ESP.LeftArm[player].To = leftArmPos
@@ -563,6 +407,7 @@ local function UpdateSkeleton(player, character, visualColor)
         ESP.LeftArm[player].Visible = false
     end
     
+    -- Right arm
     if rightArmPos then
         ESP.RightArm[player].From = torsoPos
         ESP.RightArm[player].To = rightArmPos
@@ -572,6 +417,7 @@ local function UpdateSkeleton(player, character, visualColor)
         ESP.RightArm[player].Visible = false
     end
     
+    -- Left leg
     if leftLegPos then
         ESP.LeftLeg[player].From = torsoPos
         ESP.LeftLeg[player].To = leftLegPos
@@ -581,6 +427,7 @@ local function UpdateSkeleton(player, character, visualColor)
         ESP.LeftLeg[player].Visible = false
     end
     
+    -- Right leg
     if rightLegPos then
         ESP.RightLeg[player].From = torsoPos
         ESP.RightLeg[player].To = rightLegPos
@@ -597,6 +444,7 @@ local function UpdateESP()
         local visualColor = GetVisualColor(player)
         
         if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            -- Hide all skeleton lines
             for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
                 if ESP[partName][player] then
                     ESP[partName][player].Visible = false
@@ -617,6 +465,7 @@ local function UpdateESP()
         local humanoid = character:FindFirstChild("Humanoid")
         
         if not humanoid or humanoid.Health <= 0 then
+            -- Hide all skeleton lines
             for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
                 if ESP[partName][player] then
                     ESP[partName][player].Visible = false
@@ -636,6 +485,7 @@ local function UpdateESP()
         local rootPos = Camera:WorldToViewportPoint(hrp.Position)
         
         if rootPos.Z < 0 then
+            -- Hide all skeleton lines
             for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
                 if ESP[partName][player] then
                     ESP[partName][player].Visible = false
@@ -651,9 +501,11 @@ local function UpdateESP()
             continue
         end
         
+        -- Update skeleton ESP if enabled
         if Config.SkeletonESP and shouldShowESP then
             UpdateSkeleton(player, character, visualColor)
         else
+            -- Hide skeleton lines
             for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
                 if ESP[partName][player] then
                     ESP[partName][player].Visible = false
@@ -661,30 +513,36 @@ local function UpdateESP()
             end
         end
         
+        -- Floating ESP Text
         if shouldShowESP then
             local textY = headPos.Y - 50
             
+            -- Name
             ESP.NameText[player].Text = player.DisplayName
             ESP.NameText[player].Position = Vector2.new(headPos.X, textY)
             ESP.NameText[player].Color = visualColor
             ESP.NameText[player].Visible = true
             
+            -- Health Information
             if Config.ShowHealthBar and humanoid then
                 local health = humanoid.Health
                 local maxHealth = humanoid.MaxHealth
                 local healthPercent = math.max(0, health / maxHealth)
                 
+                -- Health Text
                 ESP.HealthText[player].Text = math.floor(health) .. " hp"
                 ESP.HealthText[player].Position = Vector2.new(headPos.X, textY + 15)
                 ESP.HealthText[player].Color = Color3.fromRGB(255, 255, 255)
                 ESP.HealthText[player].Visible = true
                 
+                -- Health Bar Background
                 local barWidth = 50
                 local barHeight = 4
                 ESP.HealthBarBackground[player].Size = Vector2.new(barWidth, barHeight)
                 ESP.HealthBarBackground[player].Position = Vector2.new(headPos.X - barWidth/2, textY + 30)
                 ESP.HealthBarBackground[player].Visible = true
                 
+                -- Health Bar
                 ESP.HealthBar[player].Size = Vector2.new(barWidth * healthPercent, barHeight)
                 ESP.HealthBar[player].Position = Vector2.new(headPos.X - barWidth/2, textY + 30)
                 ESP.HealthBar[player].Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
@@ -695,6 +553,7 @@ local function UpdateESP()
                 ESP.HealthBarBackground[player].Visible = false
             end
             
+            -- Weapon Information
             if Config.ShowWeapon then
                 local weapon = GetPlayerWeapon(player)
                 ESP.WeaponText[player].Text = weapon
@@ -705,6 +564,7 @@ local function UpdateESP()
                 ESP.WeaponText[player].Visible = false
             end
             
+            -- Distance Information
             if Config.ShowDistance then
                 local distance = lp.Character and (hrp.Position - lp.Character.HumanoidRootPart.Position).Magnitude or 0
                 ESP.DistanceText[player].Text = math.floor(distance) .. "m"
@@ -723,6 +583,7 @@ local function UpdateESP()
             ESP.HealthBarBackground[player].Visible = false
         end
         
+        -- Tracers (from mouse to player)
         if Config.Tracers and shouldShowESP then
             ESP.Tracers[player].From = Vector2.new(Mouse.X, Mouse.Y)
             ESP.Tracers[player].To = Vector2.new(rootPos.X, rootPos.Y)
@@ -735,6 +596,7 @@ local function UpdateESP()
 end
 
 local function RemoveESP(player)
+    -- Remove skeleton lines
     for _, partName in pairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg"}) do
         if ESP[partName][player] then 
             ESP[partName][player]:Remove() 
@@ -761,34 +623,42 @@ local function AdvancedAimAtTarget(target)
     local currentCFrame = Camera.CFrame
     local direction = (targetPosition - currentCFrame.Position).Unit
     
+    -- Advanced: Smooth aiming with precision
     local cameraForward = currentCFrame.LookVector
     local angleToTarget = math.acos(cameraForward:Dot(direction))
     
+    -- Dynamic smoothing based on distance and angle
     local distance = (targetPosition - currentCFrame.Position).Magnitude
     local dynamicSmoothing = Config.Smoothing * (1 + (angleToTarget / 180)) / Config.AimbotSpeed
     
+    -- Precision aiming: smoother for smaller adjustments
     if angleToTarget < 10 then
         dynamicSmoothing = dynamicSmoothing * 0.7
     end
     
     local smoothedDirection = currentCFrame.LookVector:Lerp(direction, dynamicSmoothing)
     
+    -- Apply the smoothed aiming
     Camera.CFrame = CFrame.lookAt(currentCFrame.Position, currentCFrame.Position + smoothedDirection)
 end
 
 -- Main loop
 RunService.Heartbeat:Connect(function(deltaTime)
+    -- Update FOV circle position (centered to mouse)
     FOVCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
     FOVCircle.Radius = Config.FOVRadius
     
+    -- FOV Color changes based on color mode and target
     if CurrentTarget then
         FOVCircle.Color = GetVisualColor(CurrentTarget)
     else
         FOVCircle.Color = Config.ColorMode == "full" and Config.FullColor or Color3.fromRGB(255, 255, 255)
     end
     
+    -- Update ESP
     UpdateESP()
     
+    -- Advanced aimbot logic when holding LMB (only if aimbot is enabled)
     if HoldingLMB and Config.AimbotEnabled then
         local target = GetBestTarget()
         
@@ -798,6 +668,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
             ShowNotification("target locked", "tracking: " .. target.DisplayName)
         end
         
+        -- Advanced: Check if current target is still valid
         if CurrentTarget and CurrentTarget.Character then
             local humanoid = CurrentTarget.Character:FindFirstChild("Humanoid")
             if not humanoid or humanoid.Health <= 0 then
@@ -938,208 +809,12 @@ for _, teamName in pairs(teams) do
     })
 end
 
--- CONFIGURATION TAB
-ConfigTab:CreateSection("save / load configurations")
-
--- Profile name input
-local ProfileNameInput = ConfigTab:CreateInput({
-    Name = "profile name",
-    PlaceholderText = "Enter profile name",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        -- Store the profile name
-        ConfigManager.CurrentProfile = Text ~= "" and Text or "Default"
-    end,
+SettingsTab:CreateSection("information")
+SettingsTab:CreateParagraph({
+    Title = "ultimate esp aimbot",
+    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• full color mode customization\n• advanced target locking\n• center mouse fov targeting"
 })
 
--- Save Current Configuration Button
-ConfigTab:CreateButton({
-    Name = "💾 save current configuration",
-    Callback = function()
-        local profileName = ProfileNameInput:GetText()
-        if profileName == "" then
-            profileName = "Config_" .. os.date("%Y%m%d_%H%M%S")
-            ProfileNameInput:Set(profileName)
-        end
-        
-        ConfigManager:SaveConfig(profileName)
-        
-        -- Refresh dropdown
-        ConfigDropdown:Refresh(ConfigManager.Profiles, true)
-    end,
-})
+ShowNotification("ultimate esp aimbot loaded", "hold LMB to activate aimbot")
 
--- Load Configuration Dropdown
-local ConfigDropdown = ConfigTab:CreateDropdown({
-    Name = "load configuration",
-    Options = ConfigManager.Profiles,
-    CurrentOption = "",
-    Callback = function(profileName)
-        if profileName and profileName ~= "" then
-            ConfigManager:LoadConfig(profileName)
-            ProfileNameInput:Set(profileName)
-        end
-    end,
-})
-
--- Refresh configurations list button
-ConfigTab:CreateButton({
-    Name = "🔄 refresh configurations list",
-    Callback = function()
-        ConfigManager:LoadProfileList()
-        ConfigDropdown:Refresh(ConfigManager.Profiles, true)
-        ShowNotification("Configurations", "List refreshed: " .. #ConfigManager.Profiles .. " profiles")
-    end,
-})
-
--- Delete Current Configuration Button
-ConfigTab:CreateButton({
-    Name = "🗑️ delete selected configuration",
-    Callback = function()
-        local currentProfile = ProfileNameInput:GetText()
-        if currentProfile == "" then
-            ShowNotification("Delete Error", "Please select a configuration first")
-            return
-        end
-        
-        ConfigManager:DeleteConfig(currentProfile)
-        
-        -- Refresh dropdown and clear input
-        ConfigManager:LoadProfileList()
-        ConfigDropdown:Refresh(ConfigManager.Profiles, true)
-        ProfileNameInput:Set("")
-    end,
-})
-
-ConfigTab:CreateSection("import / export")
-
--- Export Configuration Button
-ConfigTab:CreateButton({
-    Name = "📤 export configuration (copy to clipboard)",
-    Callback = function()
-        local currentProfile = ProfileNameInput:GetText()
-        if currentProfile == "" then
-            ShowNotification("Export Error", "Please save or select a configuration first")
-            return
-        end
-        
-        local exported = ConfigManager:ExportConfig(currentProfile)
-        if exported then
-            setclipboard(exported)
-            ShowNotification("Exported", "Configuration copied to clipboard!")
-        end
-    end,
-})
-
--- Import Configuration Input
-ConfigTab:CreateInput({
-    Name = "import configuration (paste JSON)",
-    PlaceholderText = "Paste configuration JSON here",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(Text)
-        if Text and Text ~= "" then
-            local profileName = "Imported_" .. os.date("%Y%m%d_%H%M%S")
-            if ConfigManager:ImportConfig(Text, profileName) then
-                ProfileNameInput:Set(profileName)
-                ConfigManager:LoadProfileList()
-                ConfigDropdown:Refresh(ConfigManager.Profiles, true)
-            end
-        end
-    end,
-})
-
--- Quick Save Presets Section
-ConfigTab:CreateSection("quick save presets")
-
--- Preset buttons for common configurations
-ConfigTab:CreateButton({
-    Name = "⚡ save as: aggressive",
-    Callback = function()
-        -- Store current config
-        local currentConfig = table.clone(Config)
-        
-        -- Apply aggressive preset
-        Config.AimbotEnabled = true
-        Config.AimbotFOV = true
-        Config.FOVRadius = 80
-        Config.Smoothing = 0.02
-        Config.AimbotSpeed = 1.5
-        Config.AutoShoot = true
-        Config.ShootDelay = 0.08
-        Config.HitChance = 100
-        Config.TargetPart = "Head"
-        
-        -- Save with preset name
-        ConfigManager:SaveConfig("Preset_Aggressive")
-        
-        -- Restore original config
-        for k, v in pairs(currentConfig) do
-            Config[k] = v
-        end
-        
-        ShowNotification("Preset Saved", "Aggressive configuration saved")
-    end,
-})
-
-ConfigTab:CreateButton({
-    Name = "🎯 save as: sniper",
-    Callback = function()
-        local currentConfig = table.clone(Config)
-        
-        Config.AimbotEnabled = true
-        Config.AimbotFOV = false
-        Config.AdvancedTracking = true
-        Config.MaxTrackingAngle = 120
-        Config.Smoothing = 0.1
-        Config.Prediction = true
-        Config.PredictionStrength = 1.8
-        Config.HitChance = 90
-        Config.TargetPart = "Head"
-        
-        ConfigManager:SaveConfig("Preset_Sniper")
-        
-        for k, v in pairs(currentConfig) do
-            Config[k] = v
-        end
-        
-        ShowNotification("Preset Saved", "Sniper configuration saved")
-    end,
-})
-
-ConfigTab:CreateButton({
-    Name = "👁️ save as: esp only",
-    Callback = function()
-        local currentConfig = table.clone(Config)
-        
-        Config.AimbotEnabled = false
-        Config.ESPEnabled = true
-        Config.Tracers = true
-        Config.ShowHealthBar = true
-        Config.ShowWeapon = true
-        Config.ShowDistance = true
-        Config.SkeletonESP = true
-        Config.ColorMode = "team"
-        
-        ConfigManager:SaveConfig("Preset_ESP_Only")
-        
-        for k, v in pairs(currentConfig) do
-            Config[k] = v
-        end
-        
-        ShowNotification("Preset Saved", "ESP-only configuration saved")
-    end,
-})
-
-ConfigTab:CreateSection("configuration info")
-ConfigTab:CreateParagraph({
-    Title = "configuration management",
-    Content = "How to use:\n1. Enter a profile name\n2. Click 'Save Current Configuration' to save\n3. Use dropdown to load saved configurations\n4. Export/Import for sharing configs\n\nConfigurations are saved to:\n" .. ConfigManager.ConfigFolder
-})
-
--- Initialize dropdown with current profiles
-ConfigManager:LoadProfileList()
-ConfigDropdown:Refresh(ConfigManager.Profiles, true)
-
-ShowNotification("ultimate esp aimbot loaded", "hold LMB to activate aimbot\n" .. #ConfigManager.Profiles .. " configurations available")
-
-print("prison life ultimate esp aimbot - skeleton edition with configuration system loaded")
+print("prison life ultimate esp aimbot - skeleton edition loaded")
