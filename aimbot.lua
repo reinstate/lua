@@ -797,8 +797,14 @@ VisualTab:CreateToggle({Name = "show health bar", CurrentValue = false, Callback
 VisualTab:CreateToggle({Name = "show weapon", CurrentValue = false, Callback = function(v) Config.ShowWeapon = v; ShowNotification("weapon esp", v and "enabled" or "disabled") end})
 VisualTab:CreateToggle({Name = "show distance", CurrentValue = false, Callback = function(v) Config.ShowDistance = v; ShowNotification("distance", v and "enabled" or "disabled") end})
 
--- Settings Tab
+-- Settings Tab - TEAM MANAGEMENT RESTORED!
 SettingsTab:CreateSection("team management")
+SettingsTab:CreateParagraph({
+    Title = "team ignore settings",
+    Content = "toggle to ignore specific teams\nenable 'team check' in aimbot config first"
+})
+
+-- Get teams and create toggle for each
 local teams = GetTeams()
 for _, teamName in pairs(teams) do
     SettingsTab:CreateToggle({
@@ -824,7 +830,13 @@ end
 SettingsTab:CreateSection("information")
 SettingsTab:CreateParagraph({
     Title = "ultimate esp aimbot",
-    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• 🌈 FUN MODE - EVERYTHING RAINBOW! 🌈\n• advanced target locking\n• center mouse fov targeting"
+    Content = "features:\n• hold LMB to activate aimbot\n• skeleton esp highlighting\n• precise body outlines\n• 🌈 FUN MODE - EVERYTHING RAINBOW! 🌈\n• advanced target locking\n• center mouse fov targeting\n• team management system"
+})
+
+SettingsTab:CreateSection("controls")
+SettingsTab:CreateParagraph({
+    Title = "keybinds",
+    Content = "• LMB - activate aimbot\n• INSERT - toggle fov circle"
 })
 
 ShowNotification("ultimate esp aimbot loaded", "hold LMB to activate aimbot | try FUN MODE! 🌈")
