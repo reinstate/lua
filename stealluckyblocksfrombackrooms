@@ -1,0 +1,961 @@
+-- Script: Ultimate Auto Farmer + Follower (FINAL)
+-- Structure: ItemSpawners > BasePart (Celestial, Common, Op, etc.) > Model (SpawnedItem)
+-- Features: 3 separate clean GUIs, bulletproof following, continuous farming
+
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = nil
+local humanoidRootPart = nil
+local humanoid = nil
+
+-- Update character references
+local function updateCharacter()
+    character = player.Character
+    if character then
+        humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        humanoid = character:FindFirstChild("Humanoid")
+    end
+end
+updateCharacter()
+
+player.CharacterAdded:Connect(function(char)
+    character = char
+    humanoidRootPart = char:FindFirstChild("HumanoidRootPart")
+    humanoid = char:FindFirstChild("Humanoid")
+end)
+
+player.CharacterRemoving:Connect(function()
+    character = nil
+    humanoidRootPart = nil
+    humanoid = nil
+end)
+
+-- ===== CONFIGURATION =====
+local WAIT_TIME = 0.3
+local HOLD_DURATION = 0.2
+local PICKUP_DELAY = 0.1
+local FOLLOW_DISTANCE = 0.5
+local FOLLOW_SPEED = 0.05
+local LOOP_DELAY = 0.3
+
+-- ===== GET STRUCTURES =====
+local itemSpawners = workspace:FindFirstChild("ItemSpawners")
+local plotsFolder = workspace:FindFirstChild("Plots")
+
+-- Get all item parts (BaseParts inside ItemSpawners - INCLUDING Op)
+local itemParts = {}
+if itemSpawners then
+    for _, child in ipairs(itemSpawners:GetChildren()) do
+        -- Check if it's a BasePart
+        if child:IsA("BasePart") then
+            table.insert(itemParts, child)
+        end
+    end
+    -- Sort by name
+    table.sort(itemParts, function(a, b) return a.Name < b.Name end)
+end
+
+-- Debug print
+print("✅ Found item parts:")
+for _, part in ipairs(itemParts) do
+    print("  • " .. part.Name)
+end
+
+local plotParts = {}
+if plotsFolder then
+    for _, child in ipairs(plotsFolder:GetChildren()) do
+        if child:IsA("BasePart") then
+            table.insert(plotParts, child)
+        end
+    end
+end
+
+-- ===== TELEPORT FUNCTIONS =====
+local function teleportTo(position)
+    if not humanoidRootPart then return end
+    humanoidRootPart.CFrame = CFrame.new(position)
+end
+
+local function teleportToPlot()
+    if not humanoidRootPart then return end
+    if #plotParts > 0 then
+        local randomPlot = plotParts[math.random(1, #plotParts)]
+        if randomPlot then
+            teleportTo(Vector3.new(randomPlot.Position.X, randomPlot.Position.Y + 3, randomPlot.Position.Z))
+            return true
+        end
+    end
+    local currentPos = humanoidRootPart.Position
+    teleportTo(Vector3.new(currentPos.X, currentPos.Y - 10, currentPos.Z))
+    return false
+end
+
+local function teleportToItem(itemPart)
+    if not humanoidRootPart or not itemPart then return end
+    teleportTo(Vector3.new(itemPart.Position.X, itemPart.Position.Y + 1, itemPart.Position.Z))
+end
+
+-- ===== ITEM PICKUP FUNCTIONS =====
+-- Gets all SpawnedItem models inside a BasePart
+local function getSpawnedItemsFromPart(part)
+    local items = {}
+    if not part then return items end
+    
+    for _, child in ipairs(part:GetChildren()) do
+        if child:IsA("Model") and child.Name == "SpawnedItem" then
+            table.insert(items, child)
+        end
+    end
+    return items
+end
+
+-- Gets a clickable part from a SpawnedItem model
+local function getClickablePart(model)
+    for _, child in ipairs(model:GetChildren()) do
+        if child:IsA("BasePart") then
+            return child
+        end
+    end
+    return model.PrimaryPart or nil
+end
+
+-- Pick up an item - KEEPS PRESSING E
+local function pickUpItem(itemPart)
+    if not itemPart or not humanoidRootPart then return false end
+    
+    teleportToItem(itemPart)
+    wait(0.05)
+    
+    -- Method 1: Try clicking
+    local clicked = false
+    pcall(function()
+        local screenPoint, onScreen = workspace.CurrentCamera:WorldToScreenPoint(itemPart.Position)
+        if onScreen then
+            local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
+            VirtualInputManager:SendMouseMove(screenPos, 0)
+            wait(0.03)
+            VirtualInputManager:SendMouseButtonEvent(Enum.UserInputType.MouseButton1, 0, true, screenPos, 0)
+            wait(HOLD_DURATION)
+            VirtualInputManager:SendMouseButtonEvent(Enum.UserInputType.MouseButton1, 0, false, screenPos, 0)
+            clicked = true
+        end
+    end)
+    
+    -- Method 2: ALWAYS press E (multiple times to ensure pickup)
+    for i = 1, 3 do
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, nil)
+        wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, nil)
+        wait(0.05)
+    end
+    
+    -- Hold E for a bit longer to ensure pickup
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, nil)
+    wait(HOLD_DURATION)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, nil)
+    
+    wait(PICKUP_DELAY)
+    return true
+end
+
+-- ===== BULLETPROOF FOLLOWER =====
+local followTarget = nil
+local isFollowing = false
+local followCoroutine = nil
+
+local function getTargetRoot()
+    if not followTarget then return nil end
+    local targetChar = followTarget.Character
+    if not targetChar then return nil end
+    local targetHumanoid = targetChar:FindFirstChild("Humanoid")
+    if targetHumanoid and targetHumanoid.Health <= 0 then
+        return nil
+    end
+    return targetChar:FindFirstChild("HumanoidRootPart")
+end
+
+local function followPlayer()
+    if not humanoidRootPart then return false end
+    
+    local targetRoot = getTargetRoot()
+    if not targetRoot then return false end
+    
+    local targetPos = targetRoot.Position
+    local followPos = Vector3.new(
+        targetPos.X + (math.random(-1, 1) * 0.3),
+        targetPos.Y + 0.5,
+        targetPos.Z + (math.random(-1, 1) * 0.3)
+    )
+    
+    teleportTo(followPos)
+    return true
+end
+
+local function startFollowing()
+    if not followTarget then
+        return false, "Select a player first!"
+    end
+    if isFollowing then return true, "Already following" end
+    
+    isFollowing = true
+    followCoroutine = coroutine.create(function()
+        while isFollowing do
+            if not humanoidRootPart then
+                updateCharacter()
+                wait(0.5)
+                continue
+            end
+            
+            local success = followPlayer()
+            if not success then
+                wait(0.2)
+            else
+                wait(FOLLOW_SPEED)
+            end
+            
+            if followTarget and not followTarget.Character then
+                wait(1)
+            end
+        end
+    end)
+    coroutine.resume(followCoroutine)
+    return true, "Following " .. followTarget.Name
+end
+
+local function stopFollowing()
+    isFollowing = false
+    if followCoroutine then
+        coroutine.close(followCoroutine)
+        followCoroutine = nil
+    end
+    return true, "Stopped following"
+end
+
+-- ===== CREATE SEPARATE GUIS =====
+
+-- Function to make any frame draggable
+local function makeDraggable(frame)
+    local dragging = false
+    local dragStart, startPos
+    
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+    
+    frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    frame.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                      startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- ===== GUI 1: FARM GUI =====
+local function createFarmGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "FarmGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.ResetOnSpawn = false
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 280, 0, 420)
+    mainFrame.Position = UDim2.new(0.02, 0, 0.1, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    mainFrame.BackgroundTransparency = 0.05
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = Color3.fromRGB(80, 200, 80)
+    mainFrame.Parent = screenGui
+    makeDraggable(mainFrame)
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0.07, 0)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.Text = "🌾 Farm"
+    title.TextColor3 = Color3.fromRGB(80, 200, 80)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 16
+    title.Parent = mainFrame
+    
+    -- Divider
+    local div = Instance.new("Frame")
+    div.Size = UDim2.new(0.9, 0, 0.002, 0)
+    div.Position = UDim2.new(0.05, 0, 0.08, 0)
+    div.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
+    div.BackgroundTransparency = 0.5
+    div.Parent = mainFrame
+    
+    -- Item selection label
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 0.05, 0)
+    label.Position = UDim2.new(0, 10, 0.09, 0)
+    label.Text = "Select Items:"
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = mainFrame
+    
+    -- Item scroll
+    local itemScroll = Instance.new("ScrollingFrame")
+    itemScroll.Size = UDim2.new(1, -20, 0.50, 0)
+    itemScroll.Position = UDim2.new(0, 10, 0.15, 0)
+    itemScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+    itemScroll.BackgroundTransparency = 0.2
+    itemScroll.BorderSizePixel = 1
+    itemScroll.BorderColor3 = Color3.fromRGB(40, 40, 60)
+    itemScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    itemScroll.ScrollBarThickness = 3
+    itemScroll.Parent = mainFrame
+    
+    -- Quick buttons
+    local qFrame = Instance.new("Frame")
+    qFrame.Size = UDim2.new(1, -20, 0.07, 0)
+    qFrame.Position = UDim2.new(0, 10, 0.66, 0)
+    qFrame.BackgroundTransparency = 1
+    qFrame.Parent = mainFrame
+    
+    local allBtn = Instance.new("TextButton")
+    allBtn.Size = UDim2.new(0.3, -2, 1, 0)
+    allBtn.Position = UDim2.new(0, 0, 0, 0)
+    allBtn.Text = "All"
+    allBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    allBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+    allBtn.BackgroundTransparency = 0.2
+    allBtn.BorderSizePixel = 1
+    allBtn.BorderColor3 = Color3.fromRGB(0, 100, 0)
+    allBtn.Font = Enum.Font.GothamBold
+    allBtn.TextSize = 11
+    allBtn.Parent = qFrame
+    
+    local noneBtn = Instance.new("TextButton")
+    noneBtn.Size = UDim2.new(0.3, -2, 1, 0)
+    noneBtn.Position = UDim2.new(0.35, 2, 0, 0)
+    noneBtn.Text = "None"
+    noneBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    noneBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    noneBtn.BackgroundTransparency = 0.2
+    noneBtn.BorderSizePixel = 1
+    noneBtn.BorderColor3 = Color3.fromRGB(100, 0, 0)
+    noneBtn.Font = Enum.Font.GothamBold
+    noneBtn.TextSize = 11
+    noneBtn.Parent = qFrame
+    
+    local rareBtn = Instance.new("TextButton")
+    rareBtn.Size = UDim2.new(0.3, -2, 1, 0)
+    rareBtn.Position = UDim2.new(0.7, 4, 0, 0)
+    rareBtn.Text = "Rares"
+    rareBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    rareBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 0)
+    rareBtn.BackgroundTransparency = 0.2
+    rareBtn.BorderSizePixel = 1
+    rareBtn.BorderColor3 = Color3.fromRGB(150, 100, 0)
+    rareBtn.Font = Enum.Font.GothamBold
+    rareBtn.TextSize = 11
+    rareBtn.Parent = qFrame
+    
+    -- Status
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0.05, 0)
+    status.Position = UDim2.new(0, 10, 0.74, 0)
+    status.Text = "✅ Ready"
+    status.TextColor3 = Color3.fromRGB(150, 255, 150)
+    status.BackgroundTransparency = 1
+    status.Font = Enum.Font.Gotham
+    status.TextSize = 11
+    status.TextXAlignment = Enum.TextXAlignment.Left
+    status.Parent = mainFrame
+    
+    local stats = Instance.new("TextLabel")
+    stats.Size = UDim2.new(1, -20, 0.05, 0)
+    stats.Position = UDim2.new(0, 10, 0.79, 0)
+    stats.Text = "Selected: 0 | Collected: 0"
+    stats.TextColor3 = Color3.fromRGB(180, 180, 180)
+    stats.BackgroundTransparency = 1
+    stats.Font = Enum.Font.Gotham
+    stats.TextSize = 10
+    stats.TextXAlignment = Enum.TextXAlignment.Left
+    stats.Parent = mainFrame
+    
+    local farmBtn = Instance.new("TextButton")
+    farmBtn.Size = UDim2.new(0.9, 0, 0.10, 0)
+    farmBtn.Position = UDim2.new(0.05, 0, 0.86, 0)
+    farmBtn.Text = "▶ Start Farming"
+    farmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    farmBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    farmBtn.BackgroundTransparency = 0.15
+    farmBtn.BorderSizePixel = 2
+    farmBtn.BorderColor3 = Color3.fromRGB(0, 100, 0)
+    farmBtn.Font = Enum.Font.GothamBold
+    farmBtn.TextSize = 13
+    farmBtn.Parent = mainFrame
+    
+    -- Variables
+    local selectedItems = {}
+    local itemButtons = {}
+    local isFarming = false
+    local farmCoroutine = nil
+    local totalCollected = 0
+    
+    local function updateItemCount()
+        local total = 0
+        for _, selected in pairs(selectedItems) do
+            if selected then total = total + 1 end
+        end
+        stats.Text = "Selected: " .. total .. " | Collected: " .. totalCollected
+        return total
+    end
+    
+    local function createItemSelection()
+        for _, child in ipairs(itemScroll:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        itemButtons = {}
+        selectedItems = {}
+        
+        local yOffset = 0
+        for _, part in ipairs(itemParts) do
+            local partName = part.Name
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -10, 0, 24)
+            btn.Position = UDim2.new(0, 5, 0, yOffset)
+            btn.Text = "☐ " .. partName
+            btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+            btn.BackgroundTransparency = 0.2
+            btn.BorderSizePixel = 1
+            btn.BorderColor3 = Color3.fromRGB(60, 60, 80)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 11
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.Parent = itemScroll
+            
+            selectedItems[partName] = false
+            
+            btn.MouseButton1Click:Connect(function()
+                selectedItems[partName] = not selectedItems[partName]
+                if selectedItems[partName] then
+                    btn.Text = "☑ " .. partName
+                    btn.TextColor3 = Color3.fromRGB(150, 255, 150)
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+                    btn.BackgroundTransparency = 0.3
+                else
+                    btn.Text = "☐ " .. partName
+                    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+                    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+                    btn.BackgroundTransparency = 0.2
+                end
+                updateItemCount()
+            end)
+            
+            itemButtons[partName] = btn
+            yOffset = yOffset + 28
+        end
+        
+        itemScroll.CanvasSize = UDim2.new(0, 0, 0, yOffset + 10)
+    end
+    
+    allBtn.MouseButton1Click:Connect(function()
+        for partName, _ in pairs(selectedItems) do
+            selectedItems[partName] = true
+            local btn = itemButtons[partName]
+            if btn then
+                btn.Text = "☑ " .. partName
+                btn.TextColor3 = Color3.fromRGB(150, 255, 150)
+                btn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+                btn.BackgroundTransparency = 0.3
+            end
+        end
+        updateItemCount()
+    end)
+    
+    noneBtn.MouseButton1Click:Connect(function()
+        for partName, _ in pairs(selectedItems) do
+            selectedItems[partName] = false
+            local btn = itemButtons[partName]
+            if btn then
+                btn.Text = "☐ " .. partName
+                btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+                btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+                btn.BackgroundTransparency = 0.2
+            end
+        end
+        updateItemCount()
+    end)
+    
+    rareBtn.MouseButton1Click:Connect(function()
+        local rareItems = {"Rare", "Epic", "Legendary", "Mythic", "Godly", "Secret"}
+        for partName, _ in pairs(selectedItems) do
+            local isRare = false
+            for _, rare in ipairs(rareItems) do
+                if partName == rare then isRare = true end
+            end
+            selectedItems[partName] = isRare
+            local btn = itemButtons[partName]
+            if btn then
+                if isRare then
+                    btn.Text = "☑ " .. partName
+                    btn.TextColor3 = Color3.fromRGB(150, 255, 150)
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+                    btn.BackgroundTransparency = 0.3
+                else
+                    btn.Text = "☐ " .. partName
+                    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+                    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+                    btn.BackgroundTransparency = 0.2
+                end
+            end
+        end
+        updateItemCount()
+    end)
+    
+    local function startFarming()
+        local hasSelection = false
+        for _, selected in pairs(selectedItems) do
+            if selected then hasSelection = true; break end
+        end
+        
+        if not hasSelection then
+            status.Text = "⚠️ Select at least one item!"
+            status.TextColor3 = Color3.fromRGB(255, 200, 100)
+            return
+        end
+        
+        if isFarming then return end
+        isFarming = true
+        totalCollected = 0
+        farmBtn.Text = "⏹ Stop"
+        farmBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+        farmBtn.BorderColor3 = Color3.fromRGB(150, 0, 0)
+        status.Text = "⏳ Farming..."
+        status.TextColor3 = Color3.fromRGB(255, 255, 150)
+        
+        farmCoroutine = coroutine.create(function()
+            local originalPos = humanoidRootPart and humanoidRootPart.Position
+            
+            while isFarming do
+                if not humanoidRootPart then
+                    updateCharacter()
+                    wait(0.5)
+                    continue
+                end
+                
+                local anyItemsFound = false
+                
+                -- Loop through selected parts
+                for partName, selected in pairs(selectedItems) do
+                    if not isFarming then break end
+                    if selected then
+                        local part = itemSpawners:FindFirstChild(partName)
+                        if part and part:IsA("BasePart") then
+                            local items = getSpawnedItemsFromPart(part)
+                            if #items > 0 then
+                                anyItemsFound = true
+                                for _, itemModel in ipairs(items) do
+                                    if not isFarming then break end
+                                    local clickPart = getClickablePart(itemModel)
+                                    if clickPart then
+                                        pcall(function()
+                                            pickUpItem(clickPart)
+                                            totalCollected = totalCollected + 1
+                                            stats.Text = "Selected: " .. updateItemCount() .. " | Collected: " .. totalCollected
+                                        end)
+                                    end
+                                    teleportToPlot()
+                                    wait(WAIT_TIME)
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                if not anyItemsFound and isFarming then
+                    status.Text = "⏳ Waiting for items..."
+                    status.TextColor3 = Color3.fromRGB(255, 200, 100)
+                    wait(LOOP_DELAY)
+                elseif isFarming then
+                    status.Text = "🔄 Looping... (" .. totalCollected .. " collected)"
+                    status.TextColor3 = Color3.fromRGB(150, 255, 150)
+                    wait(LOOP_DELAY)
+                end
+            end
+            
+            if originalPos and humanoidRootPart then
+                teleportTo(originalPos)
+            end
+            
+            farmBtn.Text = "▶ Start Farming"
+            farmBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+            farmBtn.BorderColor3 = Color3.fromRGB(0, 100, 0)
+            status.Text = "⏹ Stopped"
+            status.TextColor3 = Color3.fromRGB(255, 150, 150)
+        end)
+        coroutine.resume(farmCoroutine)
+    end
+    
+    local function stopFarming()
+        isFarming = false
+        if farmCoroutine then
+            coroutine.close(farmCoroutine)
+            farmCoroutine = nil
+        end
+        farmBtn.Text = "▶ Start Farming"
+        farmBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+        farmBtn.BorderColor3 = Color3.fromRGB(0, 100, 0)
+        status.Text = "⏹ Stopped"
+        status.TextColor3 = Color3.fromRGB(255, 150, 150)
+    end
+    
+    farmBtn.MouseButton1Click:Connect(function()
+        if isFarming then stopFarming() else startFarming() end
+    end)
+    
+    createItemSelection()
+    updateItemCount()
+    
+    return screenGui
+end
+
+-- ===== GUI 2: TROLL GUI =====
+local function createTrollGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "TrollGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.ResetOnSpawn = false
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 280, 0, 380)
+    mainFrame.Position = UDim2.new(0.35, 0, 0.1, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    mainFrame.BackgroundTransparency = 0.05
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = Color3.fromRGB(255, 150, 50)
+    mainFrame.Parent = screenGui
+    makeDraggable(mainFrame)
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0.07, 0)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.Text = "👤 Troll"
+    title.TextColor3 = Color3.fromRGB(255, 150, 50)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 16
+    title.Parent = mainFrame
+    
+    -- Divider
+    local div = Instance.new("Frame")
+    div.Size = UDim2.new(0.9, 0, 0.002, 0)
+    div.Position = UDim2.new(0.05, 0, 0.08, 0)
+    div.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+    div.BackgroundTransparency = 0.5
+    div.Parent = mainFrame
+    
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 0.05, 0)
+    label.Position = UDim2.new(0, 10, 0.09, 0)
+    label.Text = "Select Player:"
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = mainFrame
+    
+    -- Player scroll
+    local playerScroll = Instance.new("ScrollingFrame")
+    playerScroll.Size = UDim2.new(1, -20, 0.50, 0)
+    playerScroll.Position = UDim2.new(0, 10, 0.15, 0)
+    playerScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+    playerScroll.BackgroundTransparency = 0.2
+    playerScroll.BorderSizePixel = 1
+    playerScroll.BorderColor3 = Color3.fromRGB(40, 40, 60)
+    playerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    playerScroll.ScrollBarThickness = 3
+    playerScroll.Parent = mainFrame
+    
+    -- Refresh and selected
+    local controlFrame = Instance.new("Frame")
+    controlFrame.Size = UDim2.new(1, -20, 0.07, 0)
+    controlFrame.Position = UDim2.new(0, 10, 0.66, 0)
+    controlFrame.BackgroundTransparency = 1
+    controlFrame.Parent = mainFrame
+    
+    local refreshBtn = Instance.new("TextButton")
+    refreshBtn.Size = UDim2.new(0.2, 0, 1, 0)
+    refreshBtn.Position = UDim2.new(0.8, 0, 0, 0)
+    refreshBtn.Text = "🔄"
+    refreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    refreshBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    refreshBtn.BackgroundTransparency = 0.2
+    refreshBtn.BorderSizePixel = 1
+    refreshBtn.BorderColor3 = Color3.fromRGB(80, 80, 100)
+    refreshBtn.Font = Enum.Font.GothamBold
+    refreshBtn.TextSize = 14
+    refreshBtn.Parent = controlFrame
+    
+    local selectedDisplay = Instance.new("TextLabel")
+    selectedDisplay.Size = UDim2.new(0.75, 0, 1, 0)
+    selectedDisplay.Position = UDim2.new(0, 0, 0, 0)
+    selectedDisplay.Text = "Selected: None"
+    selectedDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
+    selectedDisplay.BackgroundTransparency = 1
+    selectedDisplay.Font = Enum.Font.Gotham
+    selectedDisplay.TextSize = 11
+    selectedDisplay.TextXAlignment = Enum.TextXAlignment.Left
+    selectedDisplay.Parent = controlFrame
+    
+    -- Status
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0.05, 0)
+    status.Position = UDim2.new(0, 10, 0.74, 0)
+    status.Text = "⏹ Not trolling"
+    status.TextColor3 = Color3.fromRGB(200, 200, 200)
+    status.BackgroundTransparency = 1
+    status.Font = Enum.Font.Gotham
+    status.TextSize = 11
+    status.TextXAlignment = Enum.TextXAlignment.Left
+    status.Parent = mainFrame
+    
+    local trollBtn = Instance.new("TextButton")
+    trollBtn.Size = UDim2.new(0.9, 0, 0.10, 0)
+    trollBtn.Position = UDim2.new(0.05, 0, 0.80, 0)
+    trollBtn.Text = "▶ Start Trolling"
+    trollBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    trollBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+    trollBtn.BackgroundTransparency = 0.15
+    trollBtn.BorderSizePixel = 2
+    trollBtn.BorderColor3 = Color3.fromRGB(150, 70, 0)
+    trollBtn.Font = Enum.Font.GothamBold
+    trollBtn.TextSize = 13
+    trollBtn.Parent = mainFrame
+    
+    -- Player list functions
+    local playerButtons = {}
+    
+    local function refreshPlayerList()
+        for _, child in ipairs(playerScroll:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        playerButtons = {}
+        
+        local players = Players:GetPlayers()
+        local yOffset = 0
+        
+        for _, p in ipairs(players) do
+            if p ~= player then
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, -10, 0, 24)
+                btn.Position = UDim2.new(0, 5, 0, yOffset)
+                btn.Text = p.Name
+                btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+                btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+                btn.BackgroundTransparency = 0.2
+                btn.BorderSizePixel = 1
+                btn.BorderColor3 = Color3.fromRGB(60, 60, 80)
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 11
+                btn.TextXAlignment = Enum.TextXAlignment.Left
+                btn.Parent = playerScroll
+                
+                btn.MouseButton1Click:Connect(function()
+                    followTarget = p
+                    selectedDisplay.Text = "Selected: " .. p.Name
+                    for _, b in ipairs(playerButtons) do
+                        b.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+                        b.BackgroundTransparency = 0.2
+                    end
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+                    btn.BackgroundTransparency = 0.3
+                end)
+                
+                table.insert(playerButtons, btn)
+                yOffset = yOffset + 28
+            end
+        end
+        
+        playerScroll.CanvasSize = UDim2.new(0, 0, 0, yOffset + 10)
+        
+        if yOffset == 0 then
+            local noPlayers = Instance.new("TextLabel")
+            noPlayers.Size = UDim2.new(1, 0, 1, 0)
+            noPlayers.Text = "No other players found"
+            noPlayers.TextColor3 = Color3.fromRGB(150, 150, 150)
+            noPlayers.BackgroundTransparency = 1
+            noPlayers.Font = Enum.Font.Gotham
+            noPlayers.TextSize = 12
+            noPlayers.Parent = playerScroll
+        end
+    end
+    
+    refreshBtn.MouseButton1Click:Connect(function()
+        refreshPlayerList()
+        refreshBtn.Text = "✅"
+        wait(0.5)
+        refreshBtn.Text = "🔄"
+    end)
+    
+    -- Auto-refresh
+    spawn(function()
+        while true do
+            wait(3)
+            refreshPlayerList()
+        end
+    end)
+    
+    trollBtn.MouseButton1Click:Connect(function()
+        if isFollowing then
+            local _, msg = stopFollowing()
+            trollBtn.Text = "▶ Start Trolling"
+            trollBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+            trollBtn.BorderColor3 = Color3.fromRGB(150, 70, 0)
+            status.Text = "⏹ " .. msg
+            status.TextColor3 = Color3.fromRGB(200, 200, 200)
+        else
+            local success, msg = startFollowing()
+            if success then
+                trollBtn.Text = "⏹ Stop Trolling"
+                trollBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+                trollBtn.BorderColor3 = Color3.fromRGB(150, 0, 0)
+                status.Text = "📍 " .. msg
+                status.TextColor3 = Color3.fromRGB(150, 255, 150)
+            else
+                status.Text = "⚠️ " .. msg
+                status.TextColor3 = Color3.fromRGB(255, 200, 100)
+            end
+        end
+    end)
+    
+    refreshPlayerList()
+    return screenGui
+end
+
+-- ===== GUI 3: STOP ALL GUI =====
+local function createStopGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "StopGUI"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.ResetOnSpawn = false
+    
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 200, 0, 60)
+    mainFrame.Position = UDim2.new(0.68, 0, 0.1, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    mainFrame.BackgroundTransparency = 0.05
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = Color3.fromRGB(255, 50, 50)
+    mainFrame.Parent = screenGui
+    makeDraggable(mainFrame)
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0.35, 0)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.Text = "🛑 Emergency Stop"
+    title.TextColor3 = Color3.fromRGB(255, 50, 50)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.Parent = mainFrame
+    
+    local stopBtn = Instance.new("TextButton")
+    stopBtn.Size = UDim2.new(0.9, 0, 0.50, 0)
+    stopBtn.Position = UDim2.new(0.05, 0, 0.40, 0)
+    stopBtn.Text = "🛑 STOP EVERYTHING"
+    stopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    stopBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    stopBtn.BackgroundTransparency = 0.15
+    stopBtn.BorderSizePixel = 2
+    stopBtn.BorderColor3 = Color3.fromRGB(150, 0, 0)
+    stopBtn.Font = Enum.Font.GothamBold
+    stopBtn.TextSize = 13
+    stopBtn.Parent = mainFrame
+    
+    stopBtn.MouseButton1Click:Connect(function()
+        -- Stop farming
+        if isFarming then
+            isFarming = false
+            if farmCoroutine then
+                coroutine.close(farmCoroutine)
+                farmCoroutine = nil
+            end
+            local farmGUI = player.PlayerGui:FindFirstChild("FarmGUI")
+            if farmGUI then
+                local btn = farmGUI:FindFirstChildWhichIsA("TextButton")
+                if btn then
+                    btn.Text = "▶ Start Farming"
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+                    btn.BorderColor3 = Color3.fromRGB(0, 100, 0)
+                end
+                local status = farmGUI:FindFirstChildWhichIsA("TextLabel")
+                if status then
+                    status.Text = "⏹ Stopped"
+                    status.TextColor3 = Color3.fromRGB(255, 150, 150)
+                end
+            end
+        end
+        
+        -- Stop following
+        if isFollowing then
+            stopFollowing()
+            local trollGUI = player.PlayerGui:FindFirstChild("TrollGUI")
+            if trollGUI then
+                local btn = trollGUI:FindFirstChildWhichIsA("TextButton")
+                if btn then
+                    btn.Text = "▶ Start Trolling"
+                    btn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+                    btn.BorderColor3 = Color3.fromRGB(150, 70, 0)
+                end
+                local status = trollGUI:FindFirstChildWhichIsA("TextLabel")
+                if status then
+                    status.Text = "⏹ Stopped"
+                    status.TextColor3 = Color3.fromRGB(200, 200, 200)
+                end
+            end
+        end
+        
+        -- Teleport to plot
+        if humanoidRootPart then
+            teleportToPlot()
+        end
+        
+        print("🛑 All actions stopped!")
+    end)
+    
+    return screenGui
+end
+
+-- ===== STARTUP =====
+wait(1)
+
+-- Create all 3 GUIs
+createFarmGUI()
+createTrollGUI()
+createStopGUI()
+
+print("✅ Ultimate Auto Farmer FINAL loaded!")
+print("📌 Structure: ItemSpawners > BasePart (Celestial, Common, Op, etc.) > Model (SpawnedItem)")
+print("📌 Found " .. #itemParts .. " item parts including Op:")
+for _, part in ipairs(itemParts) do
+    print("  • " .. part.Name)
+end
+print("📌 3 Separate GUIs - each draggable!")
+print("📌 E key is pressed multiple times to ensure pickup!")
